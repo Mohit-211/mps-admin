@@ -1,21 +1,14 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
+import { PageSpinner } from "../components/ui/PageSpinner";
 import { useAuth } from "./useAuth";
-
-function FullPageSpinner() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-background)]">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-border)] border-t-[var(--color-primary)]" />
-    </div>
-  );
-}
 
 /** Signed-in only; otherwise to /login, remembering where the admin was going. */
 export function RequireAuth() {
   const { status } = useAuth();
   const location = useLocation();
 
-  if (status === "loading") return <FullPageSpinner />;
+  if (status === "loading") return <PageSpinner fullScreen />;
   if (status === "anonymous") {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
@@ -26,7 +19,7 @@ export function RequireAuth() {
 export function RedirectIfAuthenticated() {
   const { status } = useAuth();
 
-  if (status === "loading") return <FullPageSpinner />;
+  if (status === "loading") return <PageSpinner fullScreen />;
   if (status === "authenticated") return <Navigate to="/" replace />;
   return <Outlet />;
 }

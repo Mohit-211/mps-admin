@@ -1,20 +1,26 @@
+import { lazy, Suspense, type ComponentType } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import { HomeRedirect } from './auth/HomeRedirect';
 import { RedirectIfAuthenticated, RequireAuth } from './auth/RouteGuards';
+import { PageSpinner } from './components/ui/PageSpinner';
 import { AdminLayout } from './layouts/AdminLayout';
 
-import { LoginPage } from './pages/auth/LoginPage';
-import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
-import { ResetPasswordPage } from './pages/auth/ResetPasswordPage';
+// Each screen is its own chunk, loaded when first opened (keeps the first download small).
+const page = <T extends Record<string, ComponentType>>(load: () => Promise<T>, name: keyof T) =>
+	lazy(() => load().then((m) => ({ default: m[name] })));
 
-import { DashboardPage } from './pages/dashboard/DashboardPage';
-import { UsersPage } from './pages/users/UsersPage';
-import { UserDetailPage } from './pages/users/UserDetailPage';
-import { StaffPage } from './pages/staff/StaffPage';
+const LoginPage = page(() => import('./pages/auth/LoginPage'), 'LoginPage');
+const ForgotPasswordPage = page(() => import('./pages/auth/ForgotPasswordPage'), 'ForgotPasswordPage');
+const ResetPasswordPage = page(() => import('./pages/auth/ResetPasswordPage'), 'ResetPasswordPage');
+const DashboardPage = page(() => import('./pages/dashboard/DashboardPage'), 'DashboardPage');
+const UsersPage = page(() => import('./pages/users/UsersPage'), 'UsersPage');
+const UserDetailPage = page(() => import('./pages/users/UserDetailPage'), 'UserDetailPage');
+const StaffPage = page(() => import('./pages/staff/StaffPage'), 'StaffPage');
 
 function App() {
 	return (
+		<Suspense fallback={<PageSpinner fullScreen />}>
 		<Routes>
 			<Route element={<RedirectIfAuthenticated />}>
 				<Route path="/login" element={<LoginPage />} />
@@ -36,6 +42,7 @@ function App() {
 				</Route>
 			</Route>
 		</Routes>
+		</Suspense>
 	);
 }
 
