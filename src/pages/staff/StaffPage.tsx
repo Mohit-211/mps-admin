@@ -1,6 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
-import { KeyRound, LockKeyhole, Pencil, RotateCcw, UserMinus } from 'lucide-react';
+import { KeyRound, LockKeyhole, MapPin, Pencil, RotateCcw, UserMinus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { adminsApi } from '../../api/admins';
@@ -17,6 +18,7 @@ import { Tabs } from '../../components/ui/Tabs';
 import { useQuery } from '../../hooks/useQuery';
 import { errorMessage } from '../../lib/api';
 import { formatDate, formatRelative, initialsOf } from '../../lib/format';
+import { AssignedLocationsDialog } from './AssignedLocationsDialog';
 import { SetPasswordDialog } from './SetPasswordDialog';
 import { StaffFormDialog } from './StaffFormDialog';
 
@@ -35,6 +37,7 @@ export function StaffPage() {
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<Admin | null>(null);
 	const [passwordFor, setPasswordFor] = useState<Admin | null>(null);
+	const [locationsFor, setLocationsFor] = useState<Admin | null>(null);
 	const [confirm, setConfirm] = useState<{ kind: 'remove' | 'restore'; admin: Admin } | null>(null);
 
 	const staff = useQuery(`staff:${view}`, (signal) => adminsApi.list(view === 'active', signal));
@@ -115,6 +118,26 @@ export function StaffPage() {
 				cell: ({ row }) => <StatusBadge status={staffStatus(row.original)} />,
 			},
 			{
+				id: 'citation_scope',
+				header: 'Citation locations',
+				cell: ({ row }) => {
+					const a = row.original;
+					if (!a.permissions.includes('citations.view')) return <span className="text-[var(--color-text-muted)]">—</span>;
+					// super admin / admin always see every location; assignments limit the others (Phase 21)
+					if (a.permissions.includes('platform.read')) return <span className="text-[var(--color-text-muted)]">All (role)</span>;
+					return a.citation_scope === 'assigned' ? (
+						<Link
+							to={`/citations/locations?assigned_admin_id=${a.id}`}
+							className="font-medium text-[var(--color-primary)] hover:underline"
+						>
+							{a.assigned_locations ?? 0} assigned
+						</Link>
+					) : (
+						<span>All</span>
+					);
+				},
+			},
+			{
 				accessorKey: 'last_login_at',
 				header: 'Last sign-in',
 				cell: ({ row }) => (
@@ -148,6 +171,12 @@ export function StaffPage() {
 											setFormOpen(true);
 										},
 										hidden: !a.is_active,
+									},
+									{
+										label: 'Citation locations',
+										icon: MapPin,
+										onSelect: () => setLocationsFor(a),
+										hidden: !a.is_active || !a.permissions.includes('citations.view') || a.permissions.includes('platform.read'),
 									},
 									{
 										label: 'Set password',
@@ -250,6 +279,8 @@ export function StaffPage() {
 					else if (view === 'active') staff.reload();
 				}}
 			/>
+
+			<AssignedLocationsDialog admin={locationsFor} onClose={() => setLocationsFor(null)} onSaved={staff.reload} />
 
 			<SetPasswordDialog
 				admin={passwordFor}

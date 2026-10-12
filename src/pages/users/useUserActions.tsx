@@ -268,11 +268,11 @@ export function useUserActions({
                       .join(" · ")}
                   </div>
                   <Link
-                    to={`/users?organization_id=${org.id}&org_name=${encodeURIComponent(org.name)}`}
+                    to={`/organizations/${org.id}?tab=staff`}
                     onClick={close}
                     className="mt-1 inline-block text-xs font-semibold text-[var(--color-primary)] hover:underline"
                   >
-                    View its members
+                    Open the organization
                   </Link>
                 </div>
                 <Button

@@ -4,8 +4,24 @@ import { ApiError, errorMessage } from "../../lib/api";
 import { Button } from "./Button";
 
 /** Inline error for a failed load, with a retry. A 403 explains the missing permission. */
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+export function ErrorState({
+  error,
+  onRetry,
+  notFound,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  /** What a 404 means on this screen (e.g. "Not found or not assigned to you"). */
+  notFound?: string;
+}) {
   const forbidden = error instanceof ApiError && error.status === 403;
+  if (notFound && error instanceof ApiError && error.status === 404) {
+    return (
+      <div className="flex flex-col items-center px-6 py-14 text-center">
+        <p className="text-sm font-semibold text-[var(--color-text-primary)]">{notFound}</p>
+      </div>
+    );
+  }
   const Icon = forbidden ? ShieldOff : AlertTriangle;
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">

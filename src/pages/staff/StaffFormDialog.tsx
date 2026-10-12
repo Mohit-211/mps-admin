@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { adminsApi, type Role } from "../../api/admins";
-import type { Admin } from "../../api/auth";
+import { PERMISSION_LABELS, type Admin, type Permission } from "../../api/auth";
 import { Button } from "../../components/ui/Button";
 import { Field, FormError } from "../../components/ui/Field";
 import { inputClass } from "../../components/ui/fieldStyles";
@@ -13,20 +13,6 @@ import { Modal } from "../../components/ui/Modal";
 import { PasswordFields } from "../../components/ui/PasswordFields";
 import { ApiError, errorMessage } from "../../lib/api";
 import { passwordRule } from "../../lib/password";
-
-const PERMISSION_LABELS: Record<string, string> = {
-  "admins.manage": "Staff",
-  "platform.read": "Customers (view)",
-  "platform.write": "Customers (edit)",
-  "billing.read": "Billing (view)",
-  "billing.manage": "Billing (edit)",
-  "support.read": "Support (view)",
-  "support.manage": "Support (reply)",
-  "citations.view": "Citations (view)",
-  "citations.manage": "Citations (edit)",
-  "content.manage": "Blog & FAQ",
-  "audits.run": "Sales audit",
-};
 
 const schema = z
   .object({
@@ -222,7 +208,7 @@ function StaffForm({ onClose, admin, currentAdminId, roles, onSaved }: StaffForm
                     key={permission}
                     className="rounded bg-white px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-primary)] ring-1 ring-[var(--color-border)]"
                   >
-                    {PERMISSION_LABELS[permission] ?? permission}
+                    {PERMISSION_LABELS[permission as Permission] ?? permission}
                   </span>
                 ))
               )}

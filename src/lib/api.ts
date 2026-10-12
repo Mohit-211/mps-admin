@@ -54,6 +54,8 @@ export function onUnauthorized(handler: (() => void) | null) {
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
+  /** A non-JSON body sent as-is (e.g. a CSV import), with its content type. */
+  rawBody?: { content: string; contentType: string };
   query?: Record<string, string | number | boolean | null | undefined>;
   auth?: boolean;
   signal?: AbortSignal;
@@ -70,9 +72,10 @@ function buildUrl(path: string, query?: RequestOptions["query"]) {
   return qs ? `${url}?${qs}` : url;
 }
 
-async function send(path: string, { method = "GET", body, query, auth = true, signal }: RequestOptions) {
+async function send(path: string, { method = "GET", body, rawBody, query, auth = true, signal }: RequestOptions) {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (rawBody) headers["Content-Type"] = rawBody.contentType;
+  else if (body !== undefined) headers["Content-Type"] = "application/json";
   const token = auth ? getToken() : null;
   if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -81,7 +84,7 @@ async function send(path: string, { method = "GET", body, query, auth = true, si
     response = await fetch(buildUrl(path, query), {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: rawBody ? rawBody.content : body !== undefined ? JSON.stringify(body) : undefined,
       signal,
     });
   } catch (error) {
@@ -119,9 +122,41 @@ export async function apiBlob(path: string, options: RequestOptions = {}): Promi
   return response.blob();
 }
 
+/**
+ * Fetch a file with the auth header and save it (PDFs, CSV exports). A plain <a href> would get a 401.
+ * The name comes from the server's Content-Disposition, else `fallbackName`.
+ */
+export async function downloadFile(path: string, fallbackName: string, options: RequestOptions = {}): Promise<void> {
+  const response = await send(path, options);
+  if (!response.ok) throw await toApiError(response);
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  const name = match ? decodeURIComponent(match[1]) : fallbackName;
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** "in 3 minutes" from a 429's retry_after_seconds; null without one. */
+function retryAfter(data: ErrorData): string | null {
+  const seconds = Number(data?.retry_after_seconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  if (seconds < 90) return `${Math.ceil(seconds)} seconds`;
+  if (seconds < 5400) return `${Math.ceil(seconds / 60)} minutes`;
+  return `${Math.ceil(seconds / 3600)} hours`;
+}
+
 /** The message to show the admin for any thrown error. */
 export function errorMessage(error: unknown, fallback = "Something went wrong."): string {
-  if (error instanceof ApiError) return error.message;
+  if (error instanceof ApiError) {
+    const wait = error.status === 429 ? retryAfter(error.data) : null;
+    return wait ? `${error.message} Try again in ${wait}.` : error.message;
+  }
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }

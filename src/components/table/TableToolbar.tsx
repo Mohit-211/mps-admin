@@ -21,7 +21,7 @@ export function TableToolbar({
   return (
     <div className="flex flex-col gap-3 border-b border-[var(--color-border-light)] p-4 xl:flex-row xl:items-center xl:justify-between">
       <div className="flex flex-1 flex-col gap-2 sm:flex-row">
-        <label className="relative block min-w-0 sm:max-w-sm sm:flex-1">
+        <label className="relative block min-w-0 self-start sm:max-w-sm sm:flex-1 max-sm:w-full">
           <Search
             size={16}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"

@@ -13,7 +13,9 @@ export type Permission =
   | "citations.view"
   | "citations.manage"
   | "content.manage"
-  | "audits.run";
+  | "audits.run"
+  | "leads.read"
+  | "leads.manage";
 
 export type Admin = {
   id: string;
@@ -26,6 +28,9 @@ export type Admin = {
   password_set: boolean;
   last_login_at: string | null;
   created_at: string;
+  /** Phase 21: "assigned" = limited to `assigned_locations` customer locations on every citation screen. */
+  citation_scope?: "all" | "assigned";
+  assigned_locations?: number;
 };
 
 export const authApi = {
@@ -42,4 +47,20 @@ export const authApi = {
 
   changePassword: (body: { current_password: string; new_password: string; confirm_password: string }) =>
     api<{ changed: true; token: string }>("/admin/auth/change-password", { method: "POST", body }),
+};
+
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  "admins.manage": "Staff",
+  "platform.read": "Customers (view)",
+  "platform.write": "Customers (edit)",
+  "billing.read": "Billing (view)",
+  "billing.manage": "Billing (edit)",
+  "support.read": "Support (view)",
+  "support.manage": "Support (reply)",
+  "citations.view": "Citations (view)",
+  "citations.manage": "Citations (edit)",
+  "content.manage": "Blog & FAQ",
+  "audits.run": "Sales audit",
+  "leads.read": "Free-audit leads (view)",
+  "leads.manage": "Free-audit leads (delete)",
 };

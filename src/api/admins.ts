@@ -16,6 +16,15 @@ export type CreateAdminInput = {
 
 export type UpdateAdminInput = Partial<{ name: string; email: string; role_id: number; is_active: boolean }>;
 
+/** Phase 21: the customer locations an employee works on in citations (a hard limit for them). */
+export type AssignedLocations = {
+  admin_id: string;
+  /** false: the role already sees every location (super admin, admin), so assignments don't apply. */
+  applies: boolean;
+  citation_scope: "all" | "assigned";
+  locations: { id: string; name: string; city: string | null; organization: { id: string; name: string | null } | null; deleted: boolean }[];
+};
+
 export const adminsApi = {
   list: (active: boolean | undefined, signal?: AbortSignal) =>
     api<Admin[]>("/admin/admins", { query: { active }, signal }),
@@ -39,4 +48,11 @@ export const adminsApi = {
     api<Admin>(`/admin/admins/${adminId}/password`, { method: "POST", body }),
 
   roles: (signal?: AbortSignal) => api<Role[]>("/admin/roles", { signal }),
+
+  locations: (adminId: string, signal?: AbortSignal) =>
+    api<AssignedLocations>(`/admin/admins/${adminId}/locations`, { signal }),
+
+  /** Replaces the list; [] = every location again. 400 assignment_not_applicable / invalid_locations { unknown }. */
+  setLocations: (adminId: string, location_ids: string[]) =>
+    api<AssignedLocations>(`/admin/admins/${adminId}/locations`, { method: "PUT", body: { location_ids } }),
 };

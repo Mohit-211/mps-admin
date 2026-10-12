@@ -29,7 +29,7 @@ You're building the MyPageSEO **admin panel** frontend. The backend is done for 
   - Suspend / unsuspend, extend the trial.
   - **Audit tab:** `GET /admin/billing/audit?organization_id=`.
 - **Reports:** `GET /admin/reports` (filters: organization, location, type, status, trigger, dates), the detail `GET /admin/reports/:id`, and the PDF `GET /admin/reports/:id/pdf` (fetch it as a blob with the auth header).
-- **Overview:** `GET /admin/overview`. **Support:** `/admin/support/tickets*`. **Sales audit:** `/staff/audits*`. **Citations:** `/admin/citations/*`. **Plans, packs and coupons:** `/admin/billing/*`.
+- **Overview:** `GET /admin/overview`. **Support:** `/admin/support/tickets*`. **Sales audit:** `/staff/audits*`. **Free-audit leads** (new 2026-10-06, `leads.read`; delete with `leads.manage`): `/admin/leads/audits*`, a table + detail + PDF + CSV export of the marketing site's free-audit leads (ADMIN_PANEL.md §10a). **Citations:** `/admin/citations/*`, start from the locations index `GET /admin/citations/locations` (new 2026-10-08); screen guide in `docs/CITATIONS_ADMIN_CLAUDE_NOTE.md`. **Plans, packs and coupons:** `/admin/billing/*`.
 
 **API URL:** live **`https://api.mypageseo.com/api/v1`** (local backend: `http://localhost:5000/api/v1`). Put it in one env variable.
 

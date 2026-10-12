@@ -14,8 +14,9 @@ _Written 2026-10-05 for the Claude session building the admin panel frontend. Ev
   Errors use the same envelope with `success: false`. Machine-readable error codes are in **`data.reason`** (e.g. `{ "reason": "owns_organization", "organizations": [...] }`). Show `message` to the admin; branch on `data.reason`.
 - **Status codes:** 400 invalid input (`reason: invalid_input`), 401 no/expired token → send to login, 403 `{ reason: "forbidden", permission }` → hide or disable that feature, 404 `not_found`, 409 conflict (state doesn't allow it), 429 `rate_limited` (`retry_after_seconds`).
 - **Pagination:** list endpoints take `page` (from 1) and `limit` (1–100, default 20) and return `{ <items>, page, limit, total }`.
-- **Audit:** every write is audit-logged with the admin's id and name. Read it with `GET /admin/billing/audit?organization_id=&action=` (billing actions `billing.*` and admin-panel actions `admin.user.*`, `admin.organization.*`; `action` is an exact match). Employee changes (`admin.create`, `admin.update`, `admin.password_link`) are listed too (no organization; filter by `action`).
+- **Audit:** every write is audit-logged with the admin's id and name. Read it with `GET /admin/billing/audit?organization_id=&action=` (entries carry `organization_name` since 2026-10-11) (billing actions `billing.*` and admin-panel actions `admin.user.*`, `admin.organization.*`; `action` is an exact match). Employee changes (`admin.create`, `admin.update`, `admin.password_link`) are listed too (no organization; filter by `action`).
 - **IDs** are 24-char Mongo ObjectIds. Dates are ISO 8601 UTC strings.
+- **Downloads (2026-10-11):** PDF and CSV routes send `Content-Disposition: attachment; filename="…"`, and CORS now exposes it, so read the file name from that header after fetching the blob.
 
 ## 2. Roles and permissions (what to show to whom)
 
@@ -31,6 +32,8 @@ Call `GET /admin/auth/me` after login and drive the menu from its `permissions` 
 | `citations.view` / `citations.manage` | super admin, admin, editor | Citation directories, per-location citation lists, work queue |
 | `content.manage` | super admin, admin, editor | Blog, FAQ (legacy content routes) |
 | `audits.run` | super admin, admin, sales representative | Sales audit (staff dashboard) |
+| `leads.read` | super admin, admin, sales representative | Free-audit leads from the marketing site (list, detail, PDF, CSV) |
+| `leads.manage` | super admin, admin | Delete a free-audit lead (privacy requests) |
 
 Role ids: 1 super admin, 2 admin, 4 editor, 8 sales representative (`GET /admin/roles` lists them with their permissions).
 
@@ -63,6 +66,8 @@ Role ids: 1 super admin, 2 admin, 4 editor, 8 sales representative (`GET /admin/
 | POST | `/admin/admins/:adminId/password-link` | – | resend set-password / reset link |
 | POST | `/admin/admins/:adminId/password` | `{ password, confirm_password }` | **Set an employee's password** (row menu). Pending links stop working; their sessions end. 403 `own_account` (your own: change-password) |
 | GET | `/admin/roles` | – | role picker: `[{ role_id, key, name, active, permissions }]` |
+| GET | `/admin/admins/:adminId/locations` | – | **Phase 21:** the customer locations this employee works on in the citation admin: `{ applies, citation_scope, locations: [{ id, name, city, organization, deleted }] }` |
+| PUT | `/admin/admins/:adminId/locations` | `{ location_ids }` (≤ 1000; `[]` = all again) | **Phase 21:** replace the list. 400 `assignment_not_applicable` (super admin / admin always see all), `invalid_locations` (`unknown`) |
 
 **Deleting an employee:** employees are deactivated, not hard-deleted (their name stays on audit entries, ticket replies and citation history). Label the action "Remove" / "Delete" in the UI and call `PATCH { is_active: false }`; it ends their sessions at once and they can't sign in. Show inactive employees under an "Inactive" filter (`?active=false`); `PATCH { is_active: true }` restores one.
 
@@ -154,7 +159,7 @@ A reason is required (min 3 chars): ask for it in the confirm dialog.
 ```jsonc
 {
   "organization": { "id", "name", "type", "country", "created_at", "owner": { "id", "email" }, "suspended_at", "suspended_reason", "limit_overrides": { "max_locations"?, "extra_users"?, "free_locations"? } | null },
-  "members": [{ "user_id", "email", "name", "role": "owner|member|client_user", "status" }],   // the staff table
+  "members": [{ "user_id", "email", "name", "role": "owner|member|client_user", "status", "client_ids", "restricted" }],   // the staff table (Phase 21: restricted = limited to client_ids)
   "locations": [{ "id", "name", "city", "gbp_connected", "source" }],
   "clients": 3,                                   // agency client count
   "billing": { /* = customer GET /billing: state, plan, prices, subscription, next_renewal, locations { active, allowed, free, max }, users, tokens { balance, cost_per_refresh, ai_costs, monthly_grant, … } */ },
@@ -212,7 +217,7 @@ Other limits: `max_locations` (raise the 20-location cap; `null` = no cap), `ext
 
 Invoices: `GET /admin/billing/invoices?status=&kind=&organization_id=&q=`, `GET …/:id/pdf`, record a manual payment `POST …/:id/payments { note }`, void `POST …/:id/void { note }`.
 
-Platform-wide billing settings (a "Plans & pricing" screen): `GET/PATCH /admin/billing/plans[/:planId]`, prices `POST /admin/billing/plans/:planId/prices`, token packs `GET/POST/PATCH /admin/billing/token-packs`, coupons `GET/POST/PATCH /admin/billing/coupons`. Shapes: ENDPOINTS.md #122–#151.
+Plans carry `organization_name` (the custom plan's organization; `null` for the standard plan) since 2026-10-11. Platform-wide billing settings (a "Plans & pricing" screen): `GET/PATCH /admin/billing/plans[/:planId]`, prices `POST /admin/billing/plans/:planId/prices`, token packs `GET/POST/PATCH /admin/billing/token-packs`, coupons `GET/POST/PATCH /admin/billing/coupons`. Shapes: ENDPOINTS.md #122–#151.
 
 ## 7. Reports generated – `platform.read` (new 2026-10-05)
 
@@ -233,15 +238,37 @@ Platform-wide billing settings (a "Plans & pricing" screen): `GET/PATCH /admin/b
 
 ## 9. Support tickets – `support.read` / `support.manage`
 
-`GET /admin/support/tickets?status=&organization_id=&assigned_to=&unassigned=true&q=`, `GET …/counts`, `GET …/:ticketId` (thread incl. internal notes), `POST …/:ticketId/messages { message, internal? }`, `PATCH …/:ticketId { status?, priority?, assigned_to? }`. Statuses `open → in_progress → waiting_on_customer → resolved → closed`.
+`GET /admin/support/tickets?status=&organization_id=&assigned_to=&unassigned=true&q=`, `GET …/counts`, the assignee picker `GET /admin/support/assignees` (2026-10-11, `support.read`: active admins with `support.manage`, so editors can assign to colleagues; assigning anyone else is 400 `not_support_staff`), `GET …/:ticketId` (thread incl. internal notes), `POST …/:ticketId/messages { message, internal? }`, `PATCH …/:ticketId { status?, priority?, assigned_to? }`. Statuses `open → in_progress → waiting_on_customer → resolved → closed`.
 
 ## 10. Sales audit (staff dashboard) – `audits.run`
 
-Autocomplete `GET /staff/audits/places/autocomplete?input=&session=`, start `POST /staff/audits { place_id, session, keyword }`, poll `GET /staff/audits/:id` every 2–3 s until `done` / `failed`, PDF `GET /staff/audits/:id/pdf`, close `DELETE /staff/audits/:id`, list own `GET /staff/audits`. Full flow and shapes: API.md "Sales audit (Phase 19)". 20 audits per staff member per 24 h (429 `daily_limit_reached`).
+Autocomplete `GET /staff/audits/places/autocomplete?input=&session=`, start `POST /staff/audits { place_id, session, keyword }`, poll `GET /staff/audits/:id` every 2–3 s until `done` / `failed`, PDF `GET /staff/audits/:id/pdf`, close `DELETE /staff/audits/:id`, list own `GET /staff/audits`. Full flow and shapes: API.md "Sales audit (Phase 19)". 20 audits per staff member per 24 h (429 `daily_limit_reached`). **Since 2026-10-06 "who ranks higher" is an area ranking** (`result.basis: "area"`): `higher` = up to 10 businesses with a better average rank over the 49 points, then the business's own row (`is_self`); rows add `avg_rank` and `top3_rate`; `competitors` = the area top 3; headline `summary.area_rank` ("#N across the area"), with `summary.center_rank` as the secondary "#M at your business". **`actions`** (2026-10-11): up to 5 "what to work on first" sentences, the same list as the PDF (`[]` = the profile looks complete; `null` until done). The lead detail (10a) carries it too.
+
+## 10a. Free-audit leads (marketing site) – `leads.read` / `leads.manage` (new 2026-10-06)
+
+Every free audit started on mypageseo.com, with the lead's details once they sent the form. A lead is "verified" once they typed the emailed code; only verified leads have the full report and PDF. Unverified audits disappear after 7 days; verified ones are kept 2 years.
+
+- **Table:** `GET /admin/leads/audits?from=&to=&verified=true|false&q=&page=&limit=` → `{ leads, page, limit, total }`.
+  - Row: `{ id, created_at, stage, keyword, business: { name, address, rating, user_rating_count }, center: { source: business|city, label }, lead: { business_name, name, email, phone, verified_at } | null, summary: { center_rank, avg_rank, top3_rate } | null, score: { score, grade } | null }`.
+  - Suggested columns: date, person, business, email, phone, verified (✓ / pending / no form), keyword, centre (the city label, or "business address"), rank at centre (`null` = 30+), quick score.
+  - `q` searches the name, email, phone digits, business and keyword. Default filter: verified.
+- **Export:** `GET /admin/leads/audits/export` with the same filters, as a CSV download (fetch it as a blob with the auth header).
+- **Detail:** `GET /admin/leads/audits/:id` returns the lead (incl. `consent_at` and `consent_text_version`) and the whole audit.
+  - `result` has the same shape as the sales audit: 49 `cells` (heatmap), `summary`, `higher`, `competitors`.
+  - It also has `business.score` + `business.checklist`, `api_calls` and `report_emailed_at`.
+  - Reuse the sales-audit result components.
+- **PDF:** `GET /admin/leads/audits/:id/pdf` (409 `audit_not_ready` unless verified and done).
+- **Delete** (`leads.manage` only): `DELETE /admin/leads/audits/:id` → `{ deleted, id }`. For privacy requests; confirm first; it's audit-logged.
+
+Shapes: API.md "Free audit, marketing site (Phase 20)".
 
 ## 11. Citations admin – `citations.view` / `citations.manage`
 
-Directory master list, categories, CSV import/export, per-location citation lists and the work queue: `/admin/citations/*`, ENDPOINTS.md #82–#104 and API.md "Citations (Phase 16)".
+Locations index (2026-10-08, #190), directory master list, categories, CSV import/export, per-location citation lists and the work queue: `/admin/citations/*`, ENDPOINTS.md #82–#104 and #190, API.md "Citations (Phase 16)".
+
+**Staff assignments (Phase 21, 2026-10-12):** an employee with assigned locations (section 4) sees and edits citations of **only** those locations; everything else is a 404 and bulk skips it. Their own `GET /admin/auth/me` → `citation_scope: "assigned"`, `assigned_locations`. The index rows carry `assigned_staff`, and `?assigned_admin_id=` lists one employee's locations. Details: API.md "Staff assigned to locations (Phase 21)".
+
+**Screen-by-screen guide for the admin frontend:** [CITATIONS_ADMIN_CLAUDE_NOTE.md](CITATIONS_ADMIN_CLAUDE_NOTE.md). Start from the locations index (`GET /admin/citations/locations`): it lists every location, including those without a list (`citations: null`) and those with nothing left unchecked, which the work queue doesn't show.
 
 ## 12. Not available yet (don't build UI that needs these)
 

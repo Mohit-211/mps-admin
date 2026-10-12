@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
 	ROLE_LABELS,
@@ -16,7 +16,7 @@ import { DataTable } from '../../components/table/DataTable';
 import { TableToolbar } from '../../components/table/TableToolbar';
 import { type AdminTableFeatures } from '../../components/table/tableConfig';
 import { ActionMenu } from '../../components/ui/ActionMenu';
-import { inputClass } from '../../components/ui/fieldStyles';
+import { compactInputClass } from '../../components/ui/fieldStyles';
 import { Pagination } from '../../components/ui/Pagination';
 import { ErrorState } from '../../components/ui/States';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -123,9 +123,13 @@ export function UsersPage() {
 					const more = row.original.organizations - 1;
 					return (
 						<div className="min-w-0">
-							<div className="truncate font-medium text-[var(--color-text-primary)]">
+							<Link
+								to={`/organizations/${org.id}`}
+								onClick={(e) => e.stopPropagation()}
+								className="block truncate font-medium text-[var(--color-text-primary)] hover:text-[var(--color-primary)]"
+							>
 								{org.name}
-							</div>
+							</Link>
 							<div className="text-xs text-[var(--color-text-muted)]">
 								<span className="capitalize">{org.type}</span> ·{' '}
 								{ROLE_LABELS[org.role as MemberRole] ?? org.role}
@@ -178,7 +182,7 @@ export function UsersPage() {
 		[actions, organizationId],
 	);
 
-	const selectClass = `${inputClass} h-9 w-auto pr-8 text-xs sm:text-sm`;
+	const selectClass = `${compactInputClass} w-auto pr-8 text-xs sm:text-sm`;
 
 	return (
 		<div className="page-container">

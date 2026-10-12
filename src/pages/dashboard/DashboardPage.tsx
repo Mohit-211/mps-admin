@@ -1,185 +1,206 @@
-import {
-  Building2,
-  FileBarChart,
-  Users,
-  CreditCard,
-} from "lucide-react";
+import { AlarmClock, Building2, CreditCard, LifeBuoy, RefreshCw, Coins, UserPlus, AlertTriangle } from "lucide-react";
+import { Link } from "react-router-dom";
 
+import { ORG_STATE_LABELS, ORG_STATES } from "../../api/organizations";
+import { overviewApi } from "../../api/overview";
+import { useAuth } from "../../auth/useAuth";
+import { Button } from "../../components/ui/Button";
+import { PageHeader } from "../../components/ui/PageHeader";
+import { Panel } from "../../components/ui/Panel";
 import { StatCard } from "../../components/ui/StatCard";
-import {
-  dashboardStats,
-  recentActivity,
-  recentRegistrations,
-  subscriptionBreakdown,
-  userGrowth,
-} from "../../data/dashboard";
+import { ErrorState } from "../../components/ui/States";
+import { useQuery } from "../../hooks/useQuery";
+import { formatDateTime, formatMoney } from "../../lib/format";
+
+const STATE_COLORS: Record<string, string> = {
+  trialing: "#3478a6",
+  active: "#27855a",
+  past_due: "#b7791f",
+  inactive: "#899395",
+  suspended_by_admin: "#c9302d",
+};
 
 export function DashboardPage() {
-  const icons = [Users, Building2, CreditCard, FileBarChart];
+  const { can } = useAuth();
+  const overview = useQuery("overview", (signal) => overviewApi.get(signal));
+  const o = overview.data;
+  const billing = can("billing.read");
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <div>
-          <h1 className="page-header__title">Dashboard</h1>
-          <p className="page-header__description">
-            A quick operational overview of the MyPageSEO platform.
-          </p>
-        </div>
+      <PageHeader
+        title="Dashboard"
+        description="The platform at a glance. Every number links to the list behind it."
+        actions={
+          <>
+            {o && <span className="text-xs text-[var(--color-text-muted)]">Updated {formatDateTime(o.generated_at)}</span>}
+            <Button variant="secondary" size="sm" onClick={overview.reload} loading={overview.loading && !!o}>
+              <RefreshCw size={14} /> Refresh
+            </Button>
+          </>
+        }
+      />
 
-        <div className="text-xs text-[var(--color-text-muted)]">
-          Updated just now
-        </div>
-      </div>
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {dashboardStats.map((stat, index) => (
-          <StatCard key={stat.label} {...stat} icon={icons[index]} />
-        ))}
-      </section>
-
-      <section className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-        <div className="surface p-5">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
-                User growth
-              </h2>
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Total registered users over the last six months
-              </p>
-            </div>
-
-            <span className="rounded-md bg-[var(--color-primary-light)] px-2.5 py-1 text-xs font-semibold text-[var(--color-primary)]">
-              +8.4%
-            </span>
-          </div>
-
-          <div className="mt-7 flex h-56 items-end gap-3">
-            {userGrowth.map((item) => {
-              const height = Math.max(16, (item.users / 3000) * 100);
-
-              return (
-                <div
-                  key={item.month}
-                  className="flex min-w-0 flex-1 flex-col items-center gap-2"
-                >
-                  <div className="flex h-full w-full items-end">
-                    <div
-                      className="w-full rounded-t-md bg-[var(--color-primary)] transition-opacity hover:opacity-80"
-                      style={{ height: `${height}%` }}
-                      title={`${item.users.toLocaleString()} users`}
-                    />
-                  </div>
-                  <span className="text-[11px] text-[var(--color-text-muted)]">
-                    {item.month}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="surface p-5">
-          <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
-            Subscription breakdown
-          </h2>
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-            Current organization subscription states
-          </p>
-
-          <div className="mt-7 space-y-5">
-            {subscriptionBreakdown.map((item) => {
-              const total = subscriptionBreakdown.reduce(
-                (sum, entry) => sum + entry.value,
-                0,
-              );
-              const percentage = Math.round((item.value / total) * 100);
-
-              return (
-                <div key={item.name}>
-                  <div className="mb-2 flex items-center justify-between text-xs">
-                    <span className="font-medium text-[var(--color-text-secondary)]">
-                      {item.name}
-                    </span>
-                    <span className="font-semibold text-[var(--color-text-primary)]">
-                      {item.value}
-                    </span>
-                  </div>
-
-                  <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
-                    <div
-                      className="h-full rounded-full bg-[var(--color-primary)]"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-5 grid gap-5 xl:grid-cols-2">
+      {overview.error && !o ? (
         <div className="surface">
-          <div className="border-b border-[var(--color-border-light)] px-5 py-4">
-            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Recent registrations
-            </h2>
-          </div>
-
-          <div className="divide-y divide-[var(--color-border-light)]">
-            {recentRegistrations.map((registration) => (
-              <div
-                key={registration.name}
-                className="flex items-center justify-between gap-4 px-5 py-4"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-[var(--color-text-primary)]">
-                    {registration.name}
-                  </div>
-                  <div className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    {registration.owner} · {registration.type}
-                  </div>
-                </div>
-
-                <div className="shrink-0 text-xs text-[var(--color-text-muted)]">
-                  {registration.joined}
-                </div>
-              </div>
-            ))}
-          </div>
+          <ErrorState error={overview.error} onRetry={overview.reload} />
         </div>
-
-        <div className="surface">
-          <div className="border-b border-[var(--color-border-light)] px-5 py-4">
-            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
-              Recent activity
-            </h2>
-          </div>
-
-          <div className="divide-y divide-[var(--color-border-light)]">
-            {recentActivity.map((activity) => (
-              <div key={`${activity.action}-${activity.subject}`} className="px-5 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-sm font-medium text-[var(--color-text-primary)]">
-                      {activity.action}
-                    </div>
-                    <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                      {activity.subject}
-                    </div>
-                  </div>
-
-                  <span className="shrink-0 text-[11px] text-[var(--color-text-muted)]">
-                    {activity.time}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+      ) : !o ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="surface h-[118px] animate-pulse bg-[var(--color-surface-muted)]" />
+          ))}
         </div>
-      </section>
+      ) : (
+        <>
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Organizations"
+              value={o.organizations.total.toLocaleString()}
+              sub={`${o.organizations.by_type.business ?? 0} business · ${o.organizations.by_type.agency ?? 0} agency`}
+              icon={Building2}
+              to="/organizations"
+            />
+            <StatCard
+              label="Trials ending in 7 days"
+              value={o.trials_ending_7d.toLocaleString()}
+              sub="Still trialing, trial ends within a week"
+              icon={AlarmClock}
+              tone={o.trials_ending_7d > 0 ? "warning" : "default"}
+              to="/organizations?state=trialing&trial_ending_days=7"
+            />
+            <StatCard
+              label="Paying subscriptions"
+              value={o.subscriptions.paying.toLocaleString()}
+              sub={
+                o.subscriptions.past_due > 0
+                  ? `${o.subscriptions.past_due} past due · comped ones excluded`
+                  : "Comped subscriptions excluded"
+              }
+              icon={CreditCard}
+              to={billing ? "/billing/subscriptions?status=active" : undefined}
+            />
+            <StatCard
+              label="Open tickets"
+              value={o.open_tickets.toLocaleString()}
+              sub="Open, in progress or waiting on the customer"
+              icon={LifeBuoy}
+              tone={o.open_tickets > 0 ? "warning" : "default"}
+              to={can("support.read") ? "/support" : undefined}
+            />
+          </section>
+
+          <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MoneyTiles
+              label="MRR"
+              icon={CreditCard}
+              values={Object.entries(o.subscriptions.mrr).map(([currency, total]) => ({ currency, text: formatMoney(total, currency) }))}
+              empty="No paying subscriptions yet"
+              sub="Per month, open paid subscriptions"
+              to={billing ? "/billing/subscriptions?status=active" : undefined}
+            />
+            <MoneyTiles
+              label="Token sales, 30 days"
+              icon={Coins}
+              values={Object.entries(o.token_sales_30d).map(([currency, sale]) => ({
+                currency,
+                text: formatMoney(sale.total, currency),
+                sub: `${sale.count} pack${sale.count === 1 ? "" : "s"} sold`,
+              }))}
+              empty="No token packs sold"
+              sub="Paid token-pack invoices"
+              to={billing ? "/billing/invoices?kind=token_pack&status=paid" : undefined}
+            />
+            <StatCard
+              label="Signups, 30 days"
+              value={o.signups_30d.users.toLocaleString()}
+              sub={`Verified users · ${o.signups_30d.organizations} new organization${o.signups_30d.organizations === 1 ? "" : "s"}`}
+              icon={UserPlus}
+              to="/users"
+            />
+            <StatCard
+              label="Past due"
+              value={(o.organizations.by_state.past_due ?? 0).toLocaleString()}
+              sub="Payment failed, in the 7-day grace period"
+              icon={AlertTriangle}
+              tone={(o.organizations.by_state.past_due ?? 0) > 0 ? "warning" : "default"}
+              to="/organizations?state=past_due"
+            />
+          </section>
+
+          <section className="mt-5">
+            <Panel title="Organizations by billing state" description="Computed live for every active organization.">
+              <ul className="divide-y divide-[var(--color-border-light)]">
+                {ORG_STATES.map((state) => {
+                  const count = o.organizations.by_state[state] ?? 0;
+                  const share = o.organizations.total ? count / o.organizations.total : 0;
+                  return (
+                    <li key={state}>
+                      <Link
+                        to={`/organizations?state=${state}`}
+                        className="flex items-center gap-4 px-5 py-3 hover:bg-[var(--color-background)]"
+                      >
+                        <span className="w-28 shrink-0 text-sm font-medium text-[var(--color-text-primary)]">
+                          {ORG_STATE_LABELS[state]}
+                        </span>
+                        <span className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-muted)]">
+                          <span
+                            className="block h-full rounded-full"
+                            style={{ width: `${Math.max(count ? 2 : 0, share * 100)}%`, background: STATE_COLORS[state] }}
+                          />
+                        </span>
+                        <span className="w-12 shrink-0 text-right text-sm font-semibold text-[var(--color-text-primary)]">
+                          {count}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Panel>
+          </section>
+        </>
+      )}
     </div>
+  );
+}
+
+/** One tile per currency: USD and CAD are never added together. */
+function MoneyTiles({
+  label,
+  icon,
+  values,
+  empty,
+  sub,
+  to,
+}: {
+  label: string;
+  icon: typeof Coins;
+  values: { currency: string; text: string; sub?: string }[];
+  empty: string;
+  sub: string;
+  to?: string;
+}) {
+  return (
+    <StatCard
+      label={label}
+      icon={icon}
+      to={to}
+      value={
+        values.length === 0 ? (
+          <span className="text-base font-semibold text-[var(--color-text-muted)]">{empty}</span>
+        ) : (
+          <div className="space-y-0.5">
+            {values.map((v) => (
+              <div key={v.currency} className="flex items-baseline gap-2">
+                <span>{v.text}</span>
+                {v.sub && <span className="text-xs font-medium text-[var(--color-text-muted)]">{v.sub}</span>}
+              </div>
+            ))}
+          </div>
+        )
+      }
+      sub={sub}
+    />
   );
 }

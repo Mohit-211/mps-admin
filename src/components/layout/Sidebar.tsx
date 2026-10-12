@@ -1,7 +1,10 @@
-import { LogOut, X } from "lucide-react";
+import { LogOut, UserCog, X } from "lucide-react";
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 
+import { supportApi } from "../../api/support";
 import { useAuth } from "../../auth/useAuth";
+import { useQuery } from "../../hooks/useQuery";
 import { initialsOf } from "../../lib/format";
 import { navigation } from "./navigation";
 
@@ -11,9 +14,18 @@ type SidebarProps = {
   onClose?: () => void;
 };
 
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  [
+    "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+    isActive
+      ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+      : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text-primary)]",
+  ].join(" ");
+
 export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const { admin, can, logout } = useAuth();
-  const items = navigation.filter((item) => !item.permission || can(item.permission));
+  const items = navigation.filter((item) => can(item.permission));
+  const waiting = useOpenTicketCount(can("support.read"));
 
   return (
     <>
@@ -55,42 +67,27 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {items.map((item) => {
           const Icon = item.icon;
-
-          if (item.soon) {
-            return (
-              <div
-                key={item.to}
-                className="flex cursor-default items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[var(--color-text-muted)] opacity-70"
-                title="Coming soon"
-              >
-                <Icon size={18} strokeWidth={1.8} />
-                <span className="flex-1">{item.label}</span>
-                <span className="rounded bg-[var(--color-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-                  Soon
-                </span>
-              </div>
-            );
-          }
-
+          const badge = item.to === "/support" && waiting ? waiting : null;
           return (
-            <NavLink
-              onClick={onClose}
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                [
-                  "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-                    : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text-primary)]",
-                ].join(" ")
-              }
-            >
+            <NavLink onClick={onClose} key={item.to} to={item.to} className={linkClass}>
               <Icon size={18} strokeWidth={1.8} />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {badge !== null && (
+                <span
+                  className="min-w-5 rounded-full bg-[var(--color-secondary)] px-1.5 py-0.5 text-center text-[10px] font-bold text-white"
+                  title={`${badge} ticket${badge === 1 ? "" : "s"} waiting for the team`}
+                >
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </NavLink>
           );
         })}
+        {items.length > 0 && <div className="my-2 border-t border-[var(--color-border-light)]" />}
+        <NavLink onClick={onClose} to="/account" className={linkClass}>
+          <UserCog size={18} strokeWidth={1.8} />
+          <span>My account</span>
+        </NavLink>
       </nav>
 
       <div className="border-t border-[var(--color-border-light)] p-3">
@@ -122,4 +119,21 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     </aside>
     </>
   );
+}
+
+/**
+ * Tickets waiting for the team (status "open"). There are no email notifications for new tickets yet
+ * (Phase 15), so the menu count is how admins notice them. Refreshed every 2 minutes.
+ */
+function useOpenTicketCount(enabled: boolean): number | null {
+  const counts = useQuery(`ticket-counts:${enabled}`, (signal) =>
+    enabled ? supportApi.counts(signal) : Promise.resolve(null),
+  );
+  const { reload } = counts;
+  useEffect(() => {
+    if (!enabled) return;
+    const id = setInterval(reload, 120_000);
+    return () => clearInterval(id);
+  }, [enabled, reload]);
+  return counts.data?.open ?? null;
 }

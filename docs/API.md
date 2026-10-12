@@ -22,6 +22,8 @@ The demo data comes from an offline client, so it needs no API key.
 | 404 | Someone else's location, or a deleted or inactive one |
 | 400 | Malformed `locationId` |
 
+**Downloads (2026-10-11):** PDF and CSV routes send `Content-Disposition: attachment; filename="…"`, and CORS exposes that header (`Access-Control-Expose-Headers: Content-Disposition`), so a cross-origin app fetching the file as a blob can read the file name.
+
 **Envelope:** every response is `{ success, status, message, data }`. For errors, `data` carries the machine-readable details when there are any: `{ "reason": "…", …extra fields }` (e.g. `{ "reason": "location_payment_required", "quote": {…} }`). Build UI states on `data.reason`, never on `message`. Errors without a reason (plain validation failures, unknown routes, 500s) have `data: ""`.
 
 **Targets** are keyed `self` (the client) and `competitor_1`…`competitor_5`, in the order of `tracking.competitors`. The mapping for a run is in `targets`.
@@ -569,6 +571,38 @@ Run history, newest first, with each run's overall average per target. The defau
 ```
 
 ---
+
+## Explicit statuses and scopes on the ranking pages (2026-10-08)
+
+Mohit (2026-10-08): no number may leave the user guessing. Additive fields; nothing was removed.
+
+**Every average says what it is.** Each per-target summary on `GET /rank-tracker` (`keywords[].summary`, `groups[].summary`), on `GET /grid` (`keywords[].summary`), and `overall[target]`, gains:
+- `status`:
+  - `ok`: a real average.
+  - `not_found`: Google answered, but the business wasn't in the top 60 at any point. Show "Not in the top 60" / "60+".
+  - `no_data`: every search failed, so we couldn't get results. Show "No data", never 60+.
+- `display`: the text to print: `"12.4"`, `"60+"` or `"No data"`.
+- `status_text` (on both responses): `{ ok | not_found | no_data: { label, tooltip } }`, the wording for headings and tooltips.
+
+`trend[]` entries on `GET /rank-tracker` gain `status` and `display` too.
+
+**Every page says what it measured.** `scope`:
+- `GET /rank-tracker`: `{ kind: "tracker", points: 5, offset_km, description }`, e.g. "5 points: 100 Queen St E and 1.5 km north, south, east and west of it".
+- `GET /grid`: `{ kind: "grid", points, size, radius_km, description }`, e.g. "7×7 grid (49 points) within 8 km of 100 Queen St E".
+- `GET /map-ranking`, on each `keywords[]`: `{ kind: "point", point, list_depth: 20, description }`, e.g. "Google's top 20 at 100 Queen St E" or "Google's top 20 1.5 km north of 100 Queen St E".
+
+**Map Ranking shows both of the client's numbers at that point.** Each `keywords[]` gains `self: { in_list, list_rank, list_depth: 20, tracker_cell }`.
+- `list_rank` is the client's place in this named top 20 (`null` when it's not in the list: "not in the top 20 here").
+- `tracker_cell` is the Rank Tracker cell at the same point: `{ rank, status, bucket, display }`.
+- They come from separate Google searches, so they can differ by a place or two. Show both, labelled.
+
+**Locations, overview and dashboard:**
+- `GET /locations` rows: `rank.status` and `rank.display`.
+- `GET /locations/:id/overview` → `rankings.overall_status`, `overall_display`, and `trend[].status`.
+- `GET /dashboard`: business `locations[].avg_rank_status` / `avg_rank_display`; agency rows `visibility.avg_rank_status` / `avg_rank_display`. 2026-10-12: the business `visibility` block and the agency `portfolio` block carry them too, for the average over the locations: `null` before any run, `no_data` when no location has a usable average, `not_found` when every measured location is outside the top 60, else `ok`.
+- `key_competitor` gains `status` and `self_status`.
+- No "competitor ahead" action is raised while the client's average is `no_data`.
+- `null` status = no run yet.
 
 ## Rank Tracker page
 
@@ -1778,7 +1812,7 @@ Examples below come from `npm run seed:demo-orgs` (offline demo data), trimmed.
                           { "id": "editorial_summary", "points": 0, "max": 5, "available": false } ] } },
       { "place_id": "ChIJdemoDanforthDrainPros03", "is_self": false, "source": "tracking", "name": "Danforth Drain Pros",
         "rating": 4.3, "user_rating_count": 38, "has_hours": false, "…": "…", "public_score": { "score": 55, "…": "…" } },
-      "… up to 5 competitors (source tracking or map_list)"
+      "… up to 5 competitors: source tracking (added by the user) or area (2026-10-08: the businesses ranking highest across the latest run's whole grid; map_list = the older pick from the centre list, only for runs without stored lists)"
     ],
     "insights": [
       { "id": "review_gap", "impact": 0.71, "place_id": "ChIJXbrc…", "message": "Toronto Plumbing sJ_O has 167 reviews; you have 64 (2.6× more). Ask every happy customer for a review." },
@@ -1957,12 +1991,13 @@ Store **both** new tokens: the refresh token just used stops working (each refre
 
 ```json
 { "plan": { "id": "6ab8…", "name": "Standard", "kind": "standard" },
-  "billing": { "state": "active", "read_only": false, "trial_ends_at": "2026-10-05T…", "current_period_end": "2026-10-28T…" },
+  "billing": { "state": "active", "read_only": false, "trial_ends_at": "2026-10-05T…", "current_period_end": "2026-10-28T…", "grace_ends_at": null },
   "locations": { "used": 3, "limit": 5, "max": 20 }, "users": { "used": 4, "limit": 15 }, "tokens": { "balance": 12 },
   "keywords": { "used": 9, "limit": null }, "clients": { "used": 2 } }
 ```
 
 **Phase 13a billing** (the full billing API is in "Billing (Phase 13a)"):
+- **Every role, client_user included, can read this route.** `GET /billing` is owner / member only, so use `billing` here for the trial / read-only / suspended / past-due banner (2026-10-12: `grace_ends_at` added, set while a failed payment is in its grace period).
 - **`locations.limit`:** the trial allowance (1) or the paid quantity; `max` is the plan's cap (20 on the standard plan).
 - **`users.limit`:** 3 per paid location, pooled; the owner and pending invitations count.
 - **Keywords:** there is no organization-wide cap (20 per location always applies). `clients` is `null` for a business.
@@ -1977,14 +2012,15 @@ Store **both** new tokens: the refresh token just used stops working (each refre
 
 ### Locations (`/api/v1/locations`)
 
-`GET /locations?search=&client_id=&status=&sort=name|city|rank|gbp_score|rating|last_refreshed&order=asc|desc&page=&limit=` (default `sort=name`, `limit=25`, max 100):
+`GET /locations?search=&client_id=&status=&sort=name|city|rank|gbp_score|rating|citation_score|last_refreshed&order=asc|desc&page=&limit=` (default `sort=name`, `limit=25`, max 100):
 
 ```json
 { "locations": [
     { "location_id": "6ab8…727b", "name": "Maple Leaf Plumbing & Heating", "city": "Toronto", "country": "Canada",
       "client": { "client_id": "6ab8…7275", "name": "Maple Leaf Group" }, "source": "gbp", "gbp_connected": true,
       "status": "active", "rank": { "overall_avg_rank": 21.3, "change": 12.6 }, "gbp": { "score": 50, "grade": "D", "partial": false },
-      "reviews": { "rating": 4.6, "count": 64 }, "last_refreshed_at": "2026-09-26T18:23:14.983Z", "next_refresh_at": "2026-10-16T18:27:14.983Z" },
+      "reviews": { "rating": 4.6, "count": 64 }, "citations": { "score": 50, "grade": "D", "nap_wrong": 1 },
+      "last_refreshed_at": "2026-09-26T18:23:14.983Z", "next_refresh_at": "2026-10-16T18:27:14.983Z" },
     { "name": "Danforth Drain Pros", "source": "places_search", "gbp_connected": false, "status": "gbp_not_connected",
       "rank": { "overall_avg_rank": 10, "change": 0 }, "gbp": null, "reviews": { "rating": 4.3, "count": 38 }, "…": "…" } ],
   "page": 1, "limit": 25, "total": 3 }
@@ -1993,6 +2029,7 @@ Store **both** new tokens: the refresh token just used stops working (each refre
 - **`status`**, first match wins: `setup_required` (onboarding not completed, or no keywords), `reconnect_required` (GBP bound but its Google connection is revoked or gone), `gbp_disconnected` (2026-10-01: its GBP was unbound; `gbp_disconnected_at`), `gbp_not_connected` (never had GBP), `active`.
 - **`center`** (location header, 2026-10-01): `{ source: "place" | "manual", label, lat, lng }` or `null` before a center exists: where rankings are measured from (see RunMeta).
 - `rank`, `gbp` and `reviews` come from the latest rank run and GBP report (`null` before there is one). Without GBP, `reviews` shows the public Place Details rating.
+- **`citations`** (2026-10-08): Citation Health `{ score, grade, nap_wrong }`, the same shape as the agency dashboard table; `null` until the MyPageSEO team has checked at least one listing. `sort=citation_score` sorts by it.
 
 `POST /locations` `{ "place_id": "ChIJ…", "client_id"?: "…" }`: add a location from a `GET /places/search` result (no manual entry). One Place Details call (id, name, address with components, location, phone, website, category). US/CA only.
 
@@ -2021,11 +2058,14 @@ Store **both** new tokens: the refresh token just used stops working (each refre
   "reviews": { "available": true, "rating": 4.6, "count": 64, "unreplied": 10 },
   "competitors": { "available": true, "tracked": 1, "compared": 4, "public_score": 71,
                    "best_competitor": { "place_id": "ChIJdemoDanforthDrainPros03", "name": "Danforth Drain Pros", "public_score": 55 } },
+  "citations": { "available": true, "score": 50, "grade": "D", "score_change": 16, "coverage": 0.83, "listings": 6,
+                 "counts": { "not_checked": 1, "live_correct": 2, "nap_wrong": 1, "not_found": 1, "duplicate": 0, "submitted": 1, "pending": 0, "removed": 0 },
+                 "last_checked_at": "2026-09-27T…" },
   "refresh": { "frequency": "auto_monthly", "next_refresh_at": "…", "rankings": { "…": "…" }, "gbp": { "…": "…" }, "report": { "…": "…" } },
   "empty_states": { "no_keywords": false, "no_competitors": false, "no_ranking_data": false, "gbp_not_connected": false, "no_reports": false } }
 ```
 
-A section without data is `{ "available": false, "reason": … }`: `no_keywords`, `no_ranking_data`, `gbp_not_connected`, `no_report`, `no_competitors`, `v4_access_pending`.
+A section without data is `{ "available": false, "reason": … }`: `no_keywords`, `no_ranking_data`, `gbp_not_connected`, `no_report`, `no_competitors`, `v4_access_pending`, and for `citations` (2026-10-08) `no_citations_yet` (no list) or `not_checked_yet` (a list, nothing checked). The citation table itself is `GET /locations/:id/citations`.
 
 `PATCH /locations/:locationId` (owner/member) `{ name?, timezone? (IANA), client_id? (agency; null to unassign) }` → the header. Business data (address, phone, …) comes from GBP / Places and can't be edited.
 
@@ -2039,7 +2079,7 @@ Active runs and syncs are ended, their jobs cancelled, the GBP binding removed (
 
 ### Clients (`/api/v1/clients`, agency only)
 
-A business organization gets **403** `{ "reason": "agency_only" }`. A `client_user` sees only its own clients, read-only.
+A business organization gets **403** `{ "reason": "agency_only" }`. A `client_user` sees only its own clients, read-only. Phase 21: a restricted member sees and edits only its own clients and can't create or delete clients (see "Members limited to clients").
 
 `GET /clients?search=&status=ACTIVE|INACTIVE&page=&limit=` → `{ clients: [client], page, limit, total }`; `POST /clients` `{ name, website?, contact_email? }` → **201** client; `PATCH /clients/:clientId` `{ name?, website?, contact_email?, status? }`.
 
@@ -2071,7 +2111,7 @@ A business organization gets **403** `{ "reason": "agency_only" }`. A `client_us
 ```
 
 - **Business steps:** `organization_info` → `google` → `first_location` → `location_setup`. **Agency:** `agency_info` → `google` → `first_location` → `location_setup` → `reporting_brand` (clients are optional grouping, not a step: 2026-10-01) (Phase 12: `done` once any branding is saved with `PUT /organization/branding`; skippable). Status: `done | pending | skipped | not_available`.
-- `POST /onboarding/skip { "step": "google" | "reporting_brand" }` (owner/member): skip Google to add locations from a Places search.
+- `POST /onboarding/skip { "step": "google" | "reporting_brand" }` (owner/member): skip Google to add locations from a Places search. Returns the same body as `GET /onboarding/state`, so the page can use it directly.
 - **Location steps:** `profile_selected` (GBP) or `place_selected` (Places search) → (`center_needed` → `center_set`) → `keywords_set` → `competitors_set` → `completed`.
 - Binding a picked Business Profile location (`POST /gbp/picks/:pickId/bind`, 2026-10-01) accepts `client_id` and is limit-checked when it creates a location. A location of the organization with the same place is linked (connect GBP later). A location with a **different** place → **409** `{ "reason": "place_id_mismatch", "location_place_id", "gbp_place_id" }` (also for `POST /gbp/bind`).
 - `POST /onboarding/complete` no longer needs a GBP binding: it queues the first rank run, the first GBP sync only when bound, and sets the monthly refresh.
@@ -2094,7 +2134,7 @@ The shape follows the organization type. **It reads only stored data**: the per-
     "previous": { "impressions": 1600, "maps": 1050, "search": 550, "actions": 88, "calls": 20, "website_clicks": 45, "direction_requests": 23, "actions_per_1000_impressions": 55 },
     "change":   { "impressions": 0.15, "maps": 0.152, "search": 0.145, "actions": 0.091, "calls": 0.1, "website_clicks": 0.133, "direction_requests": 0, "actions_per_1000_impressions": -0.051 },
     "coverage": { "current": { "days_with_data": 30, "days": 30 }, "previous": { "days_with_data": 30, "days": 30 } } },
-  "visibility": { "avg_rank": 8.4, "change": 2.1, "top3_rate": 0.4, "top3_rate_change": 0.1, "trend": [] },
+  "visibility": { "avg_rank": 8.4, "avg_rank_status": "ok", "avg_rank_display": "8.4", "change": 2.1, "top3_rate": 0.4, "top3_rate_change": 0.1, "trend": [] },
   "reviews": { "available": true, "rating": 4.6, "rating_change": -0.05, "new_in_range": 4, "count": 41 },
   "citations": { "available": true, "score": 72, "score_change": 5 } }
 ```
@@ -2173,7 +2213,30 @@ The shape follows the organization type. **It reads only stored data**: the per-
 - **The link** is `${FRONTEND_URL}/invite?token=…`. The token is 32 random bytes, stored only as a SHA-256 hash, valid 7 days (`INVITATION_TTL_DAYS`), single use.
 - **Inviting the same email again** while it's pending issues a new link; the old one stops working.
 - **Development:** no email is sent; the server log shows `invitation for n***@example.com: <link>`.
-- **Refusals:** **409** `already_member`; **403** `agency_only` (a client_user in a business); **400** without valid `client_ids`; **429** above 20 invitations an hour per organization.
+- **Refusals:** **409** `already_member`; **403** `agency_only` (a client_user, or a member with clients, in a business); **400** without valid `client_ids`; **429** above 20 invitations an hour per organization.
+
+#### Members limited to clients (Phase 21, 2026-10-12)
+
+An agency owner can limit an employee (`member`) to the clients they handle: `POST /organization/invitations { "email", "role": "member", "client_ids": ["…"] }` or `PATCH /organization/members/:userId { "role": "member", "client_ids": ["…"] }`. Without `client_ids` (or `[]`) the member works on every client, as before. The platform admins can do the same with `POST /admin/users`.
+
+**What a restricted member can do:** everything a member can (tracking, refresh, posts, reviews, reports, schedules), but only for the locations of its clients. Everything else is invisible to it, the same way a client_user's other clients are:
+- locations, overview, ranking / GBP pages, reports, schedules, the dashboard and the clients list are limited to its clients
+- another client's location, and a location with no client, give **404**
+
+**Refusals for a restricted member:**
+
+| Action | Answer |
+|---|---|
+| `POST /locations` or Bind without `client_id` | **400** `client_required` |
+| `client_id` of a client it isn't assigned to (add, Bind, `PATCH /locations/:id`) | **403** `client_not_assigned` |
+| `PATCH /locations/:id { client_id: null }`, `DELETE /clients/:id/locations/:locationId` (they would hide the location from it) | **400** `client_required` |
+| `POST /clients`, `DELETE /clients/:id` | **403** `assigned_clients_only` (the owner manages clients; editing its own clients is allowed) |
+
+**How the app knows:** `GET /organization` adds `restricted` (true for a restricted member and for a client_user) and `client_ids`; `GET /organization/members` rows and the role-change answer add `restricted`.
+
+**Deleting a client** takes it off every member's list. A restricted member whose last client is deleted stays restricted and sees nothing until the owner gives it a client (its access never widens by itself).
+
+**Known:** the organization-wide duplicate checks still name places the member can't open: **409** `duplicate_place` carries that location's id (opening it is a 404), and Places search marks `already_added`.
 
 | Endpoint | Response |
 |---|---|
@@ -2559,6 +2622,55 @@ A failed import:
 - File-level problems → **400** with `invalid_csv` (unreadable), `invalid_csv_header` (`missing` / `unknown` columns), `empty_csv` or `too_many_rows`.
 - **Export safety:** cells starting with `= + - @` are prefixed with `'`, so a spreadsheet never runs them as formulas. Re-importing such a cell keeps the `'`.
 
+### Staff assigned to locations (Phase 21, 2026-10-12)
+
+The super admin (`admins.manage`) gives a MyPageSEO employee the customer locations they work on. For that employee it is a **hard limit** on every citation screen:
+- the locations index, the location list, suggest / add entries, entry edits, take off / restore, history and the three queues cover **only** those locations
+- any other location or entry answers **404** `not_found`, exactly like a missing one
+- bulk updates skip other entries with `reason: "not_found"`
+
+An employee with no locations assigned sees every location. Roles with `platform.read` (super admin, admin) always see every location; assigning to them is refused. Directories and categories are shared and unaffected.
+
+`GET /api/v1/admin/admins/:adminId/locations`:
+
+```json
+{ "admin_id": "…", "applies": true, "citation_scope": "assigned",
+  "locations": [ { "id": "…", "name": "Maple Leaf Plumbing & Heating", "city": "Toronto", "organization": { "id": "…", "name": "Northern Local SEO" }, "deleted": false } ] }
+```
+
+- `applies`: whether assignments limit this employee's role at all (false for super admin / admin).
+- `citation_scope`: `assigned` (limited) or `all`.
+- `deleted`: the customer deleted that location since; it stays on the list until the next change.
+
+`PUT /api/v1/admin/admins/:adminId/locations { "location_ids": ["…"] }` replaces the list (≤ 1000; `[]` = every location again) and answers as the GET. Audit-logged (`admin.assign_locations`).
+- **400** `assignment_not_applicable`: the role already sees every location, or has no citation access.
+- **400** `invalid_locations` with `unknown: [ids]`: a location doesn't exist or was deleted.
+
+**Where it shows:**
+- Admin views (`GET /admin/admins`, `GET /admin/admins/:adminId`, `GET /admin/auth/me`) add `citation_scope` and `assigned_locations` (a count). An employee's own panel can say "You work on N assigned locations" from `/admin/auth/me`.
+- The citations locations index (`GET /admin/citations/locations`) adds `assigned_staff: [{ id, name }]` per row and an `assigned_admin_id` filter: one employee's locations. Use the index as the picker for assigning.
+
+### Finding a location (admin, follow-up 2026-10-08)
+
+`GET /admin/citations/locations?q=&organization_id=&client_id=&country=US|CA&list=has|none&sort=name|score|checked&page=&limit=` lists **every live location** with its citation summary, so an admin can open any location's list. The work queue only shows locations with unchecked entries; this index also shows a location that was never given a list, or one where everything has been checked.
+
+```json
+{ "locations": [
+    { "location": { "id": "…", "name": "Maple Leaf Plumbing & Heating", "city": "Toronto", "country": "Canada",
+                    "organization": { "id": "…", "name": "Pat Agency" }, "client": { "id": "…", "name": "Maple Leaf" } },
+      "citations": { "score": 50, "grade": "D", "coverage": 0.83, "total": 6,
+                     "counts": { "not_checked": 1, "live_correct": 2, "nap_wrong": 1, "not_found": 1, "duplicate": 0, "submitted": 1, "pending": 0, "removed": 0 },
+                     "last_checked_at": "2026-09-27T…" } },
+    { "location": { "id": "…", "name": "Austin Plumbing", "city": "Austin", "country": "United States", "organization": { "id": "…", "name": "Lone Star Co" }, "client": null },
+      "citations": null } ],
+  "page": 1, "limit": 50, "total": 2 }
+```
+
+- **`citations: null`:** the location has no citation list yet. Open it (`GET …/locations/:locationId`) and run suggest.
+- **`q`** matches the name or city. **`list=none`** gives locations without a list; **`list=has`** gives those with one.
+- **Sorts:** `name` (default); `score` (lowest first, locations without a list last); `checked` (least recently checked first).
+- The numbers come from the location summary, which every citation change keeps up to date.
+
 ### A location's citation list (admin)
 
 `GET /admin/citations/locations/:locationId` is the admin screen for one location:
@@ -2835,6 +2947,8 @@ Ledger types: `purchase | spend | refund | grant | monthly_grant | adjustment | 
 - Trial extension: `PATCH /api/v1/admin/organizations/:organizationId/trial { "trial_ends_at": "…" }` (admin panel, 13b).
 - `POST …/organizations/:organizationId/tokens { "amount": 5, "type": "grant", "note": "goodwill" }` (negative `adjustment`s can't take the balance below zero).
 
+**Organization names (2026-10-11).** Plans (`GET/PATCH /admin/billing/plans[/:planId]`, `POST …/prices`, `POST …/custom-plan`) and audit entries (`GET /admin/billing/audit`, the `audit` list of `GET /admin/billing/organizations/:organizationId`) carry `organization_name` next to `organization_id`: the custom plan's or the entry's organization, `null` for the standard plan, for entries without an organization (employees, coupons, packs) and for a deleted organization.
+
 
 ## Admin panel (Phase 13b)
 
@@ -2889,7 +3003,7 @@ MRR = what each open paid subscription charges per month (first + (paid − 1) �
 
 **Customer side** (`/api/v1/support/tickets`, any organization role; a client_user sees only its own tickets):
 - `POST /support/tickets { subject, category?: billing|technical|account|data|other, message, location_id? }` → **201** `{ id, number: "TCK-000001", subject, category, status: "open", priority, location_id, messages, last_message_at, last_message_by, created_at, closed_at, thread: [{ id, author: { kind, name }, body, created_at }] }`
-- `GET /support/tickets?status=&page=&limit=`, `GET /support/tickets/:ticketId` (with `thread`)
+- `GET /support/tickets?status=&page=&limit=` → `{ tickets: [ticket without thread], page, limit, total }`; `GET /support/tickets/:ticketId` (with `thread`)
 - `POST /support/tickets/:ticketId/messages { message }`: status back to `open` (also reopens a resolved ticket); **409** `ticket_closed` on a closed one.
 - `POST /support/tickets/:ticketId/close`
 
@@ -2900,9 +3014,10 @@ Team replies appear as `{ "kind": "team", "name": "MyPageSEO team" }`; internal 
 **Team side** (`/api/v1/admin/support/tickets`, `support.read` / `support.manage`):
 - `GET …?status=&organization_id=&assigned_to=&unassigned=true&q=` (q: a number prefix such as `TCK-00` or words of the subject); each ticket adds `organization`, `created_by: { id, email }` and `assigned_to`.
 - `GET …/counts` → `{ open, in_progress, waiting_on_customer, resolved, closed, unassigned_open }`.
+- `GET /api/v1/admin/support/assignees` (2026-10-11, `support.read`) → `{ assignees: [{ id, name, email }] }`: the active admins whose role has `support.manage`, sorted by name. Use it for the assignee picker; it needs no `admins.manage`, so an editor can assign tickets to colleagues.
 - `GET …/:ticketId`: the full thread, internal notes included (`internal: true`).
 - `POST …/:ticketId/messages { message, internal?: false }`: a reply sets `waiting_on_customer` and emails the customer; an internal note changes nothing for the customer. The first team message assigns the ticket to its author.
-- `PATCH …/:ticketId { status?, priority?: low|normal|high, assigned_to?: <admin id> | null }`.
+- `PATCH …/:ticketId { status?, priority?: low|normal|high, assigned_to?: <admin id> | null }`. **400** `unknown_admin` (no such active admin); 2026-10-11: **400** `not_support_staff` when the assignee's role lacks `support.manage`.
 
 **Emails:** a new ticket and customer replies go to `SUPPORT_EMAIL`; team replies go to the customer with a link to `FRONTEND_URL/support/<id>`. Sent or logged per `EMAIL_TRANSPORT` (OPERATIONS.md "Email").
 
@@ -2927,7 +3042,7 @@ All paths are under `/api/v1/locations/:locationId/reviews`. **Deterministic fir
   "flag_level": "attention",
   "analysis": { "sentiment": "negative", "severity": "high", "suspicious_indicators": [], "summary": "Price complaint", "recommended_action": "Reply publicly and offer to talk.", "analyzed_at": "…", "stale": false },
   "appeal": null, "report_status": "not_reported",
-  "ai_reply_eligible": false, "ai_reply_skip_reason": "rating_not_eligible", "appeal_eligible": true,
+  "ai_reply_eligible": true, "ai_reply_skip_reason": null, "appeal_eligible": true,
   "first_seen_at": "…"
 }
 ```
@@ -2935,7 +3050,7 @@ All paths are under `/api/v1/locations/:locationId/reviews`. **Deterministic fir
 - `reply_state`: `none` (no reply), `draft` (a draft waits), `sent` (a reply is on Google, from us or from elsewhere), `failed` (the last send failed: `send_error`).
 - `flag_level`: `none`, `attention` (a human should look) or `suspicious` (possible Google policy issue). Show "Suspicious indicators", never "fake". System flag codes: `link`, `contact_info`, `promotional`, `duplicate_text`, `profanity`, `low_rating_burst` (suspicious); `repeat_reviewer`, `empty_low_rating`, `rating_text_mismatch` (attention). AI flags after an analysis: `ai_suspicious`, `ai_serious`. Each flag has a `label` to show.
 - `stale: true` on a draft, analysis or appeal: the review changed since it was made.
-- `ai_reply_eligible`: AI drafts only for 4-5 stars, without a reply, not suspicious; otherwise `ai_reply_skip_reason`.
+- `ai_reply_eligible`: AI drafts for any rated review without a reply that isn't suspicious (Phase 9.1; before: 4-5 stars only); otherwise `ai_reply_skip_reason`.
 
 ### `GET /reviews/summary` (no AI)
 
@@ -2968,14 +3083,26 @@ Fetches new and updated reviews newest first and stops at the first one already 
 
 ### `POST /reviews/drafts` (AI)
 
-`{ "review_ids": ["…"], "regenerate": false }` (1-20 ids). Only eligible 4-5 star reviews go to the AI, in batches of 10 (one request each). Drafts that exist for the same review text are returned free; a draft the user wrote or edited is never replaced unless `regenerate: true`.
+`{ "review_ids": ["…"], "regenerate": false }` (1-20 ids). Only eligible reviews (Phase 9.1: any rating, not suspicious) go to the AI, in batches of 10 (one request each). Drafts that exist for the same review text are returned free; a draft the user wrote or edited is never replaced unless `regenerate: true`.
 
 ```json
 { "drafts": [ { "review_id": "…", "reply_state": "draft", "draft": { "text": "Thanks Ann, glad the boiler's working again…", "source": "ai", "stale": false }, "…": "…" } ],
-  "generated": 2, "reused": 0, "skipped": [ { "review_id": "…", "reason": "rating_not_eligible" } ], "tokens_spent": 1 }
+  "generated": 2, "reused": 0, "skipped": [ { "review_id": "…", "reason": "flagged" } ], "tokens_spent": 1 }
 ```
 
 What the AI sees: the business name, category and city, up to 8 tracked keywords (used only if they fit), each review's rating and text, and the reviewer's **first name** only.
+
+**Phase 9.1 (2026-10-09): every rating.** Drafts now cover 1-3 star reviews too (only `suspicious` ones are skipped: report those instead). Replies to 1-3 stars follow separate rules: acknowledge and apologise without admitting fault, no offers or compensation, an invitation to contact the business directly, never argue; they never use keywords. The skip reason `rating_not_eligible` no longer exists.
+
+### `POST /reviews/drafts/all` (AI, Phase 9.1): "Draft all unreplied"
+
+`{ "regenerate": false }`. Drafts every unreplied review that isn't suspicious and has no current draft, oldest first, **up to 50 per call** (about 10–15 s). Call again while `remaining > 0` ("Continue: 12 left"). The cost of the call is checked first: **402** `{ reason: "insufficient_tokens", cost, balance, reviews }` and nothing is spent. Drafts the user wrote or edited are kept unless `regenerate: true`.
+
+```json
+{ "drafted": 50, "remaining": 12, "tokens_spent": 5, "drafts": [ { "review_id": "…", "rating": 2, "reply_state": "draft", "draft": { "text": "Hi Sam, we're sorry the visit fell short…", "source": "ai" }, "…": "…" } ] }
+```
+
+The summary shows what the button would do: `ai.draftable` (reviews waiting for a draft), `ai.draft_all_cost` (tokens for all of them) and `ai.draft_all_max` (50). Then the user ticks drafts (or "select all drafts": `GET /reviews?has_draft=true&replied=false`) and sends them with `POST /reviews/send` (up to 100 ids per call).
 
 ### `PUT /reviews/:reviewId/draft`, `DELETE /reviews/:reviewId/draft`
 
@@ -2983,7 +3110,7 @@ What the AI sees: the business name, category and city, up to 8 tracked keywords
 
 ### `POST /reviews/send`
 
-`{ "review_ids": ["…"] }` (≤ 50). Publishes each review's draft on Google (replaces an existing reply). No AI.
+`{ "review_ids": ["…"] }` (≤ 100; it was 50 before Phase 9.1). Publishes each review's draft on Google (replaces an existing reply). No AI.
 
 ```json
 { "results": [ { "review_id": "…", "status": "sent", "reason": null }, { "review_id": "…", "status": "skipped", "reason": "no_draft" } ], "sent": 1, "failed": 0 }
@@ -3029,9 +3156,186 @@ Sends monthly counts per rating and at most 60 recent review texts cut to 300 ch
 | 503 | `ai_budget_reached` | The server-wide daily AI budget is used up; try tomorrow |
 | 502 | `ai_failed` | OpenAI didn't answer; the tokens were refunded |
 
-**Token costs** are set per plan by MyPageSEO admins (`PATCH /admin/billing/plans/:planId { ai_token_costs }`) and shown in `GET /billing` → `tokens.ai_costs` and in the reviews summary. Defaults: reply drafts 1 per started batch of 10 reviews, analysis 1 per started 10, appeal draft 1, insights 2. Reused results cost nothing.
+**Token costs** are set per plan by MyPageSEO admins (`PATCH /admin/billing/plans/:planId { ai_token_costs }`) and shown in `GET /billing` → `tokens.ai_costs` and in the reviews summary (`ai.token_costs`). Both read the same plan entitlement, so they always agree; the keys are `reply_drafts_per_10`, `analysis_per_10`, `appeal`, `insights`, `post_draft`, `post_image`. Defaults: reply drafts 1 per started batch of 10 reviews, analysis 1 per started 10, appeal draft 1, insights 2. Reused results cost nothing.
 
 **Dashboard (Phase 18):** `GET /dashboard` → `reviews` adds `new_this_month`, `positive`, `negative`, `awaiting_attention`, `flagged`, `suspicious`, `drafts_pending`, `replies_sent_this_month`, `last_review_at` and `needs_attention: [{ location_id, name, awaiting_attention, suspicious }]` once reviews are stored; agency table rows get `reviews: { rating, total, awaiting_attention, suspicious }`; recommended actions `reviews:attention` and `reviews:suspicious`.
+
+**Dashboard (Phase 9):** recommended actions `posts:failed` (failed or rejected posts), `posts:approval` (posts waiting for approval) and `posts:stale` (a bound location with post data but nothing published in 30 days and nothing scheduled).
+
+## GBP posts (Phase 9)
+
+Paths are under `/api/v1/locations/:locationId/posts` unless shown in full. Write, schedule, publish, edit and delete Google Business Profile posts from the dashboard. A post moves `draft` → (`pending_approval` →) `scheduled` → `publishing` → `published`; `failed` means our call to Google failed (retry), `rejected` means Google's review rejected the post. Google is called only when a post is published (now, or by the job at its time), when a post that is on Google is edited or deleted, and on **Refresh posts**. Publishing needs a GBP binding and v4 access (`gbp_not_connected`, `v4_access_pending`).
+
+**Flow on the Posts page:** `GET summary` + `GET posts` (or `GET calendar`) → editor: optional `POST media` (photo) → `POST posts` with `action: draft | schedule | publish` → edit with `PATCH :postId` → `POST :postId/schedule`, `/publish`, `/unschedule`, `/retry`, `/duplicate` → `DELETE :postId`. With approval on: `POST :postId/approve` / `reject`.
+
+### The post object
+
+```json
+{
+  "post_id": "6ac1…", "location_id": "6ab7…", "type": "event", "source": "manual", "status": "scheduled",
+  "language_code": "en",
+  "summary": "Join our open house: free furnace checks and coffee all day.",
+  "cta": { "type": "SIGN_UP", "url": "https://example.com/open-house" },
+  "event": { "title": "Open house", "start": { "date": "2026-11-14", "time": "10:00" }, "end": { "date": "2026-11-14", "time": "16:00" } },
+  "offer": null,
+  "recurrence": { "pattern": "weekly", "days_of_week": ["SATURDAY"], "day_of_month": null, "week_of_month": null, "ends_on": "2027-01-30" },
+  "media": [ { "media_id": "6ac2…", "url": "https://api.mypageseo.com/m/3f9c…e1.jpg", "width": 1200, "height": 900, "kind": "upload" } ],
+  "scheduled_at": "2026-11-01T14:00:00.000Z", "published_at": null,
+  "approval": { "requested_by": "…", "requested_at": "…", "decided_by": "…", "decided_at": "…", "decision": "approved", "on_behalf": false, "note": "Looks good" },
+  "google": { "state": null, "search_url": null, "missing": false, "media_url": null },
+  "error": null,
+  "issues": [],
+  "warnings": [ { "code": "short_text", "message": "Posts of 150–300 characters usually do better than very short ones." } ],
+  "can_edit": true, "created_by": "…", "created_at": "…", "updated_at": "…"
+}
+```
+
+- **Types:** `standard` (text and/or one photo), `event` (title + start / end), `offer` (title + start / end, optional `coupon_code`, `redeem_url` (https), `terms`; no button: Google shows its own "View offer").
+- **Button (`cta`):** `BOOK`, `ORDER`, `SHOP`, `LEARN_MORE`, `SIGN_UP` with an https `url`; `CALL` without a URL (uses the profile phone).
+- **Dates** are the location's local calendar date (`YYYY-MM-DD`) with an optional time (`HH:mm`); without a time the event spans the whole day.
+- **Repeats (`recurrence`, events and offers only):** `daily`; `weekly` with `days_of_week` (empty = the weekday of the start); `monthly` with `day_of_month` **or** `week_of_month` (`FIRST`…`FOURTH`, `LAST`: "the second Saturday"); `ends_on` at most a year after the start. Google repeats the post itself.
+- **Limits:** text ≤ 1,500 characters, title ≤ 58, one photo.
+- `issues`: what still blocks scheduling or publishing (`[{ field, code, message }]`; empty = ready). A draft may be incomplete; scheduling or publishing an incomplete post is **422** `post_incomplete` with the same list.
+- `warnings`: hints, never blocking: `phone_in_text`, `link_in_text` (Google often rejects these), `all_caps`, `many_emoji`, `no_button`, `short_text`.
+- `error` on a failed or rejected post: `{ code, message, at }`. Codes: `google_rejected_request` (Google's message), `google_unavailable` (no answer; retry), `google_rejected` (Google's review rejected it), `reconnect_required`, `gbp_not_connected`, `v4_access_pending`, `media_url_not_public`, `media_unreachable`, `media_missing`, `publish_interrupted`, `gbp_unbound`, `location_removed`, `post_incomplete`.
+- `source: google`: a post made on Google outside the app, imported by a sync or Refresh. It has no `media` (its photo is `google.media_url`) and can be edited and deleted.
+- `google.missing: true`: the post was deleted on Google; it can only be deleted here.
+
+### `GET /posts/summary`
+
+```json
+{
+  "stats": { "drafts": 2, "pending_approval": 1, "scheduled": 3, "published": 14, "failed": 0, "rejected": 0,
+             "published_last_30_days": 4, "last_published_at": "…", "next_scheduled_at": "2026-10-12T14:00:00.000Z", "updated_at": "…" },
+  "settings": { "approval": "team", "default_cta": { "type": "CALL", "url": null }, "language_code": "en", "refreshed_at": "…" },
+  "connection": { "gbp_connected": true, "v4_enabled": true, "photos_publishable": true },
+  "you": { "role": "member", "needs_approval": true, "can_approve": false }
+}
+```
+
+Use `you.needs_approval` to label the buttons "Send for approval" instead of "Publish" / "Schedule", and `you.can_approve` to show Approve / Reject. `photos_publishable: false` (a development server): photos can be uploaded but not published.
+
+### `GET /posts`, `GET /posts/calendar`, `GET /api/v1/posts/calendar`
+
+- List query: `status=draft,scheduled`, `type`, `source`, `from`, `to` (ISO; matches the published or scheduled time), `page`, `limit` (≤ 100) → `{ posts: [post], page, limit, total }`, most recently changed first.
+- Calendar: `from`, `to` (ISO, at most 93 days) → `{ from, to, items: [{ post_id, location_id, type, status, source, date, summary, event, recurrence }] }`. `date` is `published_at`, else `scheduled_at`; undated drafts are not on the calendar.
+- `GET /api/v1/posts/calendar?from=&to=&location_ids=a,b` (organization-wide; an agency sees every location it may see) adds `location_name` to each item and `locations: [{ location_id, name }]`.
+
+### `POST /posts`
+
+```json
+{ "type": "standard", "summary": "…", "cta": { "type": "BOOK", "url": "https://example.com/book" }, "media_ids": ["6ac2…"],
+  "action": "schedule", "scheduled_at": "2026-10-12T14:00:00Z" }
+```
+
+- `action`: `draft` (default; may be incomplete), `schedule` (needs `scheduled_at`, 2 minutes to 1 year ahead), `publish` (now).
+- Language and the default button come from the posting settings when not given.
+- Answer **201** with the post. Its `status` says what happened: `draft`, `scheduled`, `pending_approval` (approval required), `published`, `rejected` or `failed` (with `error`; the post stays and can be retried).
+
+### `PATCH /posts/:postId`
+
+Any post field (`null` or `""` clears one).
+- **Published or rejected post:** Google is patched first with only the changed fields, so a refusal leaves the post unchanged (**502** with Google's reason).
+- **Type:** can't change on a published post (**409** `type_change_on_published`; duplicate it instead).
+- **Completeness:** scheduled, waiting and published posts must stay complete (**422**).
+- **Approval:** a scheduled post edited by someone who needs approval goes back to `pending_approval`. An edited draft or failed post loses an earlier approval.
+
+### Scheduling and publishing
+
+- `POST :postId/schedule { "scheduled_at": "…" }`: from `draft`, `failed`, `scheduled` (reschedule) or `pending_approval`.
+- `POST :postId/publish`: publish now.
+- `POST :postId/retry`: same as publish, but only from `failed`.
+- `POST :postId/unschedule`: back to `draft` (the job or the approval request is cancelled).
+- `POST :postId/duplicate`: **201**, a new draft with the same content.
+- `DELETE :postId` → `{ post_id, deleted: true, deleted_on_google }`.
+- **409** `invalid_status` (with `status` and `allowed_from`) when the post is in the wrong state; **409** `post_changed` when it changed meanwhile (reload).
+
+**Publishing is never doubled.** The job and "publish now" claim the post first. A post with a Google name is never created again. After a Google timeout the server looks for the post Google created before trying again. A safety job every 15 minutes finishes interrupted publishes and publishes scheduled posts whose job was lost.
+
+### Approval
+
+Owner setting `PUT /posts/settings { "approval": "off" | "team" | "client", "default_cta": { "type": "CALL" } | null, "language_code": "en" }` → `{ "settings": { "approval", "default_cta", "language_code" } }` (**403** `owner_only`; **400** `no_client`).
+- `team`: a member's schedule / publish goes to `pending_approval`; an owner approves. The owner's own posts don't wait.
+- `client` (the location must belong to a client, else **400** `no_client`): every post waits; a client user of that client approves. An owner may approve on the client's behalf (`approval.on_behalf: true`).
+- `POST :postId/approve { "note": "…" }` → the post publishes at its `scheduled_at`, or now when it had none or the time has passed. `POST :postId/reject { "note": "Change the wording" }` → back to `draft` with `approval.decision: "rejected"`. Someone else gets **403** `not_an_approver`.
+- No email notifications yet (Phase 15); `stats.pending_approval` and the dashboard action `posts:approval` show waiting posts.
+
+### Photos
+
+- `POST /posts/media` (multipart, field `file`): JPEG or PNG, ≤ 5 MB, at least 250×250. It is cropped to 4:3 (at most 1200×900, never enlarged) and saved as a JPEG without metadata.
+- → **201** `{ media_id, kind: "upload", url, width, height, bytes, created_at }`.
+- Errors: **400** `media_type`, `media_too_small`, `media_too_large`, `media_too_plain` (too little detail: under 10 KB), `media_unreadable`, `invalid_upload`.
+- Put the `media_id` in a post's `media_ids`.
+- `GET /posts/media` lists the location's photos (newest 50).
+- `DELETE /posts/media/:mediaId` (**409** `media_in_use` while an unpublished post uses it).
+- Photos no post uses are deleted after 30 days.
+- `url` is public (`/m/<token>.jpg`, no login) because Google fetches it.
+
+### `POST /posts/refresh`
+
+Reads every post of the location from Google (free), updates states (a post Google's review rejected becomes `rejected`), imports posts made on Google, and marks posts deleted there.
+- → `{ updated, imported, missing, refreshed_at, next_allowed_at }`.
+- Once per 15 minutes (`POSTS_REFRESH_MIN_MINUTES`): **429** `refresh_too_soon`.
+- The monthly GBP sync does the same.
+
+## AI posts and auto-posts (Phase 9.1)
+
+OpenAI only (text: `gpt-5-nano`; images: `OPENAI_IMAGE_MODEL`, default `gpt-image-1-mini`). Every AI action spends MyPageSEO tokens (`GET /billing` → `tokens.ai_costs`: `post_draft` 1, `post_image` 3 by default, admin-set). The tokens are refunded when OpenAI fails. Without a key: **503** `ai_not_configured`. Other errors: **402** `insufficient_tokens` `{ balance, cost }`, **503** `ai_budget_reached`, **502** `ai_failed`. Only public profile facts (name, category, city, description, services), tracked keywords and the last 5 post texts go to OpenAI.
+
+### In the editor
+
+- `POST /posts/ai-draft { "topic": "new rye loaf", "tone": "friendly", "type": "standard", "cta_type": "CALL", "variants": 2, "language_code": "en" }`
+  - → `{ drafts: [{ summary, event_title, cta_type, image_idea }], tokens_spent, model }`
+  - Nothing is saved. Put the chosen text into `POST /posts` with `"source": "ai"`.
+  - The text never contains phone numbers, links, invented prices or offers.
+- `POST /posts/ai-image { "prompt_hint": "fresh loaves on a wooden table" }` (or `{ "post_id": "…" }` to illustrate a post's text)
+  - Optional `style`: `photo_scene`, `lifestyle_photo`, `detail_photo`, `flat_illustration`, `render_3d`, `watercolor` or `photo_wide`. Without it the style rotates per image, so a profile's images vary (realistic photos are part of the mix).
+  - → **201** `{ media: { media_id, kind: "ai", url, width: 1200, height: 900 }, style, tokens_spent }`. Add the `media_id` to the post's `media_ids`.
+  - Images never contain words, logos or brand names.
+- `POST /posts/:postId/ai-regenerate { "text": true, "image": true, "topic": "holiday orders" }`
+  - Gives new text and / or a new image to a post that is not on Google yet (draft, scheduled, waiting, failed).
+  - → `{ post, tokens_spent }`. A scheduled post keeps its time; approval rules apply as for any edit.
+
+### Auto-posts (series)
+
+The user picks days, a time, themes and a tone. The server writes each post about `lead_hours` (48) before its time: text plus an image when `include_image`. The post appears in the posts list and calendar as `scheduled` (`source: "ai"`, `series_id`). If nobody touches it, it publishes on time. The user can edit it, regenerate it (`ai-regenerate`), unschedule it or delete it. Approval modes apply as for any post: a series created by a member waits for the owner in team mode, and every post waits for the client in client mode. **Creating a series is consent to its token spend** (default 4 tokens per post with an image, 1 without).
+
+```json
+POST /api/v1/locations/:locationId/post-series
+{ "name": "Weekly tips", "cadence": { "kind": "weekly", "days_of_week": ["MONDAY", "THURSDAY"] }, "time_of_day": "09:00",
+  "starts_on": "2026-10-12", "ends_on": null, "topics": ["sourdough tips", "weekend specials idea", "meet the bakers"],
+  "tone": "friendly", "cta": { "type": "CALL" }, "include_image": true, "language_code": "en",
+  "instructions": "Never mention gluten-free.", "lead_hours": 48 }
+```
+
+- **Cadence:** `{ kind: "weekly", days_of_week: [...] }`, `{ kind: "every_n_days", n: 1–30 }` (counted from `starts_on`) or `{ kind: "monthly", day_of_month: 1–28 }`.
+- **Time:** `time_of_day` is in the location's time zone (`time_zone`; UTC when unknown).
+- **Topics:** used in turn.
+- **Button:** `cta` is the post's button; when null the AI may suggest "Call now".
+- **Limits:** at most 3 active series per location. A GBP binding is required (**400** `gbp_not_connected`).
+
+The series object:
+
+```json
+{ "series_id": "…", "location_id": "…", "name": "Weekly tips", "active": true, "cadence": { "kind": "weekly", "days_of_week": ["MONDAY", "THURSDAY"] },
+  "time_of_day": "09:00", "time_zone": "America/Toronto", "starts_on": "2026-10-12", "ends_on": null, "topics": ["…"], "tone": "friendly",
+  "cta": { "type": "CALL" }, "include_image": true, "language_code": "en", "instructions": null, "lead_hours": 48, "posts_generated": 4,
+  "next_slots": ["2026-10-12T13:00:00.000Z", "…"],
+  "last_error": { "code": "insufficient_tokens", "message": "Not enough tokens for this AI action.", "slot_at": "…", "at": "…" },
+  "history": [ { "slot_at": "…", "post_id": "…", "outcome": "generated", "reason": null, "at": "…" } ],
+  "created_at": "…", "updated_at": "…" }
+```
+
+- `last_error` is set while slots fail; it clears on the next success.
+- **Failure codes:** `insufficient_tokens`, `ai_not_configured`, `ai_budget_reached`, `ai_failed`, `gbp_not_connected`. A failed slot leaves no post and is retried every hour until its time passes.
+- `history` holds the last 20 outcomes, newest first. `reason: "image_failed"` means a text-only post was made.
+- The dashboard shows `posts:series_problem`; `GET /posts/summary` → `stats.series_problems`.
+- **Other routes:**
+  - `PATCH /post-series/:id` changes future posts.
+  - `POST /post-series/:id/pause` | `/resume`.
+  - `GET /post-series/:id/preview?count=5` → `{ time_zone, slots: [{ slot_at, topic, generates_at }] }` (no AI).
+  - `POST /post-series/:id/generate-next` → **201** `{ series, post }`: makes the next slot's post now, as a sample.
+  - `DELETE /post-series/:id?keep_scheduled=false`: its scheduled posts go back to drafts unless `keep_scheduled=true`; published posts stay.
 
 ## Sales audit (Phase 19)
 
@@ -3040,7 +3344,13 @@ The staff dashboard's free audit, shown by sales staff in a meeting: one busines
 **What one audit measures:**
 - **Heatmap:** the keyword searched from a fixed **7×7 grid within 5 km** of the business (49 points, spacing 1.667 km), one sample per point, ranks **to 30** (deeper is `not_found`, shown "30+"). Row 0 is the north edge, col 0 the west edge; the business is the center cell `(3, 3)`.
 - **Summary:** `center_rank` (the rank at the business), `avg_rank` (over the points that didn't fail, 30+ counted as 31), `found_rate` (share of points in the top 30), `top3_rate`.
-- **Who ranks higher:** the named list at the business: every business above it, or all 30 when it isn't in the top 30. The center cell uses this same list, so the two always agree.
+- **Who ranks higher (area ranking, 2026-10-06):** every business seen in a top 30 anywhere on the grid is ranked by its **average rank over the 49 points** (30+ counted as 31; ties: higher top-3 share, then higher top-30 share; an exact tie goes to the business). `result.basis` is `"area"`.
+  - `higher`: the businesses with a better average (up to 10), in area order, then **the business's own row last** (`is_self: true`). Each row: `{ rank, name, address, is_self, avg_rank, top3_rate }`, where `rank` is the area position (`null` on the business's row when it wasn't in any top 30).
+  - `competitors`: the area top 3 other businesses, with `avg_rank` and `top3_rate` added.
+  - `summary.area_rank`: the business's area position. `result.area`: `{ entries, self_rank, ahead, seen, points }` (`ahead` = how many have a better average).
+  - The names come from the named list at the centre (Pro), the top 3's Place Details, and a name + address lookup (Place Details) for any of the up to 10 still unnamed. If one can't be named: `higher: null` + `names_unavailable`.
+  - Why: at its own address a business is nearly always #1, so the centre's list said "nobody ranks higher" while the business was outside the top 3 almost everywhere else (CHANGELOG `audit_area_ranking`).
+- **Centre rank:** `summary.center_rank` is still the rank in the named list at the centre (the center cell uses it, so the two agree), but it's no longer the headline.
 - **Quick GBP score:** the Public Score (rating, review count, category, hours, website, phone, Google's description) with a checklist (`good | partial | missing`, plus photos, informational), for the business and the **top 3 other businesses** at its location.
 
 **Flow:**
@@ -3079,6 +3389,7 @@ Use one random session token (8–36 of `A-Za-z0-9_-`, e.g. a UUID) per search b
     "higher": [{ "rank": 1, "name": "…", "address": "…", "is_self": false }, "…"],
     "competitors": [{ "rank": 1, "name": "…", "address": "…", "facts": { "rating": 4.8, "user_rating_count": 212, "…": "…" }, "score": { "score": 100, "grade": "A", "…": "…" }, "checklist": ["…"] }]
   },
+  "actions": ["Get more Google reviews: you have 37, the leading business near you has 212.", "…"],
   "warnings": [],
   "failure_reason": null,
   "api_calls": { "ids_only": 98, "pro": 1, "details": 4 },
@@ -3090,6 +3401,7 @@ Use one random session token (8–36 of `A-Za-z0-9_-`, e.g. a UUID) per search b
 - `status`: `queued | running | done | failed`. `failure_reason`: `search_failed` (every grid search failed), `places_not_configured`, `enqueue_failed`, `timed_out` (still not finished after 10 minutes), `internal_error`.
 - `warnings` (the audit is still `done`): `some_points_failed` (those cells have `status: "error"`, shown "–", left out of the averages), `names_unavailable` (`higher: null`, `competitors: []`; the center cell keeps the grid rank), `some_competitors_unavailable` (that row has `facts`/`score` null).
 - A competitor's `facts` / `score` / `checklist` have the same shape as the business's.
+- `actions` (2026-10-11): up to 5 plain-language "what to work on first" sentences, the same as the PDF's list (from the checklist and the gap to the top 3); `[]` when the profile looks complete (the PDF then says so), `null` until the audit is `done`. Not in `GET /staff/audits` (the list has no result).
 - Show `attribution.text` ("Google Maps") under business names and ratings, as on the other pages.
 
 **`GET /staff/audits/:auditId/pdf`:** `application/pdf`, `Content-Disposition: attachment; filename="audit-<business>-<YYYY-MM-DD>.pdf"`. MyPageSEO branding; usually 2 pages: the ranking part (KPIs, heatmap, who ranks higher), then the quick score (KPIs, checklist, the comparison with the top 3, up to 5 "what to work on first" actions). **409** `audit_not_ready` before `done`.
@@ -3097,3 +3409,115 @@ Use one random session token (8–36 of `A-Za-z0-9_-`, e.g. a UUID) per search b
 **`DELETE /staff/audits/:auditId`** → `{ "deleted": true, "id": "6ac0…" }`. **404** `audit_not_found` for an unknown, closed, expired or another staff member's audit (every route).
 
 **Cost per audit** (list prices): 1 Place Details for the business + 3 for the top 3 (Enterprise + Atmosphere, about $0.10 together), 1 names search (Pro, $0.032; a second when the business isn't in the top 20), and about 98 IDs-only searches (free). About **$0.13–0.17** per audit. Counted in the usage ledger as purpose `sales_audit` (`npm run cost:report` shows "(sales audits)").
+
+## Free audit, marketing site (Phase 20)
+
+The free tool on **mypageseo.com**: the same quick audit as the staff dashboard (Phase 19: one business, one keyword, a 7×7 grid within 5 km, ranks to 30, the quick score against the top 3, one PDF), as a lead magnet. Everything else on the marketing site stays on its own backend; **only this page calls this API** (`https://api.mypageseo.com/api/v1`). The marketing-site handoff, with the page flow and copy, is [MARKETING_CLAUDE_NOTE.md](MARKETING_CLAUDE_NOTE.md).
+
+**Two stages:**
+1. **Preview:** free for us (the IDs-only grid + 1 Place Details). The page shows the 4 headline numbers, the heatmap colours (no rank numbers) and the score number. The server strips the rest.
+2. **Full:** after the visitor's email is verified with a 6-digit code. Who ranks higher, the checklist, the comparison with the top 3, the PDF, and the PDF by email.
+
+**No login.** Instead:
+- **Cloudflare Turnstile** on the start and the lead form (`turnstile_token` from the widget; one token per submission).
+- The audit's **access token**, returned once by the start. Every later call sends it as the header **`X-Audit-Token`**. A wrong or missing token gets the same 404 as an unknown audit.
+
+**Limits** (429, `reason: "limit_reached"`, `which`, `limit`, `contact_url`):
+- 2 verified reports per **business**, per **email** and per **phone** in any 90 days (`FREE_AUDIT_LIMIT_PER_90_DAYS`). The business limit is checked at the start, email and phone at the lead form, and all three again at verification.
+- 5 starts per **IP** per day (`which: "ip"`).
+- A site-wide cap of 100 starts per day: `reason: "daily_cap_reached"`.
+- Autocomplete: 100 per IP per hour and a site-wide daily cap.
+- Codes: one per minute (`code_resend_too_soon`, `retry_after_seconds`), 5 per audit and 5 per email per hour (`too_many_codes`); 10 minutes each, 5 tries (`code_invalid` with `attempts_left`, then `too_many_attempts`: ask for a new code).
+
+**The grid centre (`center`):**
+- `{ "source": "business" }` (default): the business's address.
+- `{ "source": "city", "place_id", "session" }`: a city / ZIP from `kind=city` autocomplete. For example, a Mississauga business checking Brantford. A business with no address on Google must use a city (`400 no_location`).
+
+### `GET /public/audits/places/autocomplete?input=&session=&kind=business|city`
+
+`{ "suggestions": [{ "place_id": "ChIJ…", "description": "Maple Leaf Plumbing, King St, Mississauga, ON", "main_text": "Maple Leaf Plumbing", "secondary_text": "King St, Mississauga, ON", "types": ["plumber", "establishment"] }], "attribution": { "provider": "Google", "text": "Google Maps" } }`
+
+Use a separate random `session` (UUID) for the business box and the city box. Pass each to the start call, so the keystrokes are billed as part of the Place Details call.
+
+### `POST /public/audits`
+
+```json
+{ "turnstile_token": "0.AbC…", "place_id": "ChIJ…business", "session": "6f1c…", "keyword": "emergency plumber",
+  "center": { "source": "city", "place_id": "ChIJ…brantford", "session": "a93e…" } }
+```
+
+**201**, the view below plus `"access_token": "<64 hex>"`. Keep it (sessionStorage); it isn't shown again.
+
+### `GET /public/audits/:auditId` (header `X-Audit-Token`)
+
+Poll every 2–3 s while `polling` is true.
+- **Preview:** about 15–25 s after the start.
+- **Full report:** about 10 s after verification.
+
+```json
+{
+  "id": "6ac2…", "stage": "preview_done", "preview_ready": true, "full_ready": false, "polling": false, "locked": true,
+  "keyword": "emergency plumber", "center": { "source": "city", "label": "Brantford, ON, Canada" },
+  "grid": { "size": 7, "radius_km": 5, "spacing_km": 1.667 },
+  "business": { "name": "Maple Leaf Plumbing", "address": "1 King St, Mississauga, ON", "rating": 4.2, "user_rating_count": 18, "category": "Plumber", "country": "CA" },
+  "preview": {
+    "summary": { "center_rank": 9, "center_status": "ok", "avg_rank": 21.4, "found_rate": 0.55, "top3_rate": 0.04, "points": 49, "failed_points": 0 },
+    "cells": [{ "row": 0, "col": 0, "bucket": "low" }, "… 49"],
+    "score": { "score": 52, "grade": "D" }
+  },
+  "result": null, "pdf_available": false,
+  "lead": { "submitted": false, "email_masked": null, "verified": false, "code_expires_at": null, "attempts_left": null },
+  "warnings": [], "failure_reason": null, "created_at": "…", "finished_at": null,
+  "attribution": { "provider": "Google", "text": "Google Maps" }
+}
+```
+
+- `stage`: `preview_queued → preview_running → preview_done → (after verification) full_queued → full_running → done`, or `failed`.
+  - `failure_reason`: `search_failed`, `places_not_configured`, `enqueue_failed`, `timed_out` or `internal_error`. Offer "run again", which is a new start.
+- `bucket`: `pack` (1–3), `visible` (4–10), `low` (11–20), `invisible` (21–30), `not_found` (30+) or `error`.
+- `preview.summary.center_rank` comes from the grid. The full report replaces it with the rank in the named list at the centre, so it can move by a place or two.
+- **Area ranking (2026-10-06):** `preview.summary.area_rank` is the business's place when every business on the grid is ranked by its average rank. `preview.businesses_ahead` is how many have a better average: "3 businesses outrank you in your area", with no names until the email is verified. `center.lat` / `center.lng` (both views) are the grid centre, for a map behind the heatmap.
+- **When `stage` is `done` and the lead is verified:**
+  - `locked: false` and `preview: null`
+  - `business` gains `checklist`, `score.parts`, `website`, `phone` and the other public facts
+  - `result` has the same shape as the sales audit: `cells` with `rank`, `summary` (with `area_rank`), `basis: "area"`, `higher` (up to 10 ahead across the area, then the client's own row; rows carry `avg_rank` and `top3_rate`), and `competitors` (the area top 3, each with `facts`, `score`, `checklist`, `avg_rank` and `top3_rate`)
+  - `result.area` carries counts only here: `{ self_rank, ahead, seen, points }`
+  - `actions` (2026-10-11): up to 5 "what to work on first" sentences, as in the PDF (see the sales audit); `null` while the audit is locked. The admin lead detail (`GET /admin/leads/audits/:id`) carries `actions` too.
+  - `pdf_available: true`
+
+### `POST /public/audits/:auditId/lead` (header `X-Audit-Token`)
+
+```json
+{ "turnstile_token": "0.XyZ…", "business_name": "Maple Leaf Plumbing", "name": "Pat Doe", "email": "pat@example.com", "phone": "(905) 555-0100", "consent": true }
+```
+
+The response is the view with `lead: { submitted: true, email_masked: "p***@example.com", verified: false, code_expires_at, attempts_left: 5 }`. A 6-digit code is emailed.
+- The email is lower-cased.
+- The phone must be a US or Canadian number. It's stored as `+19055550100` (`400 invalid_phone` otherwise).
+- Sending again with other details (a typo in the email) is allowed, subject to the code limits.
+
+### `POST /public/audits/:auditId/lead/resend`, `POST /public/audits/:auditId/verify { "code": "123456" }`
+
+On success the view has `lead.verified: true` and `stage: "full_queued"`, or still `preview_*`: the full stage then follows the preview automatically. Keep polling until `done`.
+
+### `GET /public/audits/:auditId/pdf`
+
+`application/pdf`. The same PDF is emailed to the lead when the report is ready. Returns **409** `audit_not_ready` before then.
+
+**Retention:** an audit that is never verified is deleted after 7 days. A verified lead and its report are kept `FREE_AUDIT_RETENTION_DAYS` (730) for the admin panel.
+
+### Admin: `/admin/leads/audits` (`leads.read`: super admin, admin, sales; `leads.manage`: super admin, admin)
+
+- `GET /admin/leads/audits?from=&to=&verified=true|false&q=&page=&limit=` →
+  ```
+  { leads: [{ id, created_at, stage, keyword,
+              business: { name, address, rating, user_rating_count }, center: { source, label },
+              lead: { business_name, name, email, phone, verified_at } | null,
+              summary: { center_rank, avg_rank, top3_rate } | null, score: { score, grade } | null }],
+    page, limit, total }
+  ```
+  `q` searches the name, email, phone digits, business and keyword.
+- `GET /admin/leads/audits/export`: the same filters, as CSV.
+- `GET /admin/leads/audits/:leadId`: the whole audit and the lead, including `consent_at` and `consent_text_version`.
+- `GET /admin/leads/audits/:leadId/pdf`: **409** `audit_not_ready` unless the audit is verified and done.
+- `DELETE /admin/leads/audits/:leadId` (`leads.manage`): for privacy requests; audit-logged as `admin.free_audit.delete`.

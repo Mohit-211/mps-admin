@@ -29,6 +29,8 @@ const schema = z
     organization_id: z.string().optional(),
     role: z.enum(["member", "client_user"]),
     client_ids: z.array(z.string()),
+    /** Phase 21: an agency member limited to some clients (else they work on every client). */
+    limit_clients: z.boolean(),
   })
   .superRefine((v, ctx) => {
     if (v.mode === "new" && (v.organization_name ?? "").trim().length < 2) {
@@ -36,6 +38,9 @@ const schema = z
     }
     if (v.mode === "existing" && !v.organization_id) {
       ctx.addIssue({ code: "custom", path: ["organization_id"], message: "Choose an organization." });
+    }
+    if (v.mode === "existing" && v.role === "member" && v.limit_clients && v.client_ids.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["client_ids"], message: "Choose at least one client, or untick “Limit to some clients”." });
     }
   });
 
@@ -52,6 +57,7 @@ const defaults: Values = {
   organization_id: "",
   role: "member",
   client_ids: [],
+  limit_clients: false,
 };
 
 type CreateUserDialogProps = {
@@ -92,6 +98,7 @@ function CreateUserForm({ onClose, onCreated, organization }: CreateUserDialogPr
   const sendEmail = useWatch({ control, name: "send_email" });
   const role = useWatch({ control, name: "role" });
   const clientIds = useWatch({ control, name: "client_ids" }) ?? [];
+  const limitClients = useWatch({ control, name: "limit_clients" });
 
   const chooseOrg = (row: Pick<OrganizationRow, "id" | "name" | "type" | "owner_email"> | null) => {
     setOrg(row);
@@ -99,6 +106,7 @@ function CreateUserForm({ onClose, onCreated, organization }: CreateUserDialogPr
     if (row) clearErrors("organization_id");
     if (row?.type === "business") setValue("role", "member");
     setValue("client_ids", []);
+    setValue("limit_clients", false);
   };
 
   const onSubmit = handleSubmit(async (v) => {
@@ -118,7 +126,9 @@ function CreateUserForm({ onClose, onCreated, organization }: CreateUserDialogPr
             name: v.name,
             organization_id: v.organization_id!,
             role: v.role,
-            ...(v.role === "client_user" && v.client_ids.length ? { client_ids: v.client_ids } : {}),
+            ...((v.role === "client_user" || (v.role === "member" && v.limit_clients)) && v.client_ids.length
+              ? { client_ids: v.client_ids }
+              : {}),
             send_email: v.send_email,
           };
     try {
@@ -281,7 +291,7 @@ function CreateUserForm({ onClose, onCreated, organization }: CreateUserDialogPr
               hint={
                 role === "client_user"
                   ? "Client users only see the clients assigned to them."
-                  : "Team members can work on every location of the organization."
+                  : "Team members work on every location, unless an agency limits them to some clients."
               }
             >
               <select id="user-role" className={inputClass} {...register("role")}>
@@ -290,7 +300,19 @@ function CreateUserForm({ onClose, onCreated, organization }: CreateUserDialogPr
               </select>
             </Field>
 
-            {org && role === "client_user" && (
+            {org && org.type !== "business" && role === "member" && (
+              <label className="flex cursor-pointer items-start gap-2.5 text-sm text-[var(--color-text-primary)]">
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]" {...register("limit_clients")} />
+                <span>
+                  Limit to some clients
+                  <span className="block text-xs text-[var(--color-text-secondary)]">
+                    They then see and work only on those clients' locations. Unticked: every client.
+                  </span>
+                </span>
+              </label>
+            )}
+
+            {org && (role === "client_user" || (role === "member" && limitClients && org.type !== "business")) && (
               <Field label="Clients they can see" htmlFor="user-clients" error={errors.client_ids?.message}>
                 <ClientPicker
                   organizationId={org.id}

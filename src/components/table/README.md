@@ -8,7 +8,7 @@ Rules:
 2. Our JSX/Tailwind owns visual presentation.
 3. Page-specific column definitions stay with the page.
 4. Shared table behavior belongs in `components/table`.
-5. Data belongs in `src/data` until real APIs are introduced.
+5. Data comes from the API modules in `src/api`; never hard-code sample rows.
 6. Filters/search can be page-specific until patterns stabilize.
 7. Do not introduce MUI DataGrid, Ant Design Table, Bootstrap tables, or another visual table framework.
 
