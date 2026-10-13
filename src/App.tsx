@@ -39,6 +39,7 @@ const LocationCitationsPage = page(() => import('./pages/citations/LocationCitat
 const WorkQueuePage = page(() => import('./pages/citations/WorkQueuePage'), 'WorkQueuePage');
 const DirectoriesPage = page(() => import('./pages/citations/DirectoriesPage'), 'DirectoriesPage');
 const CategoriesPage = page(() => import('./pages/citations/CategoriesPage'), 'CategoriesPage');
+const SuggestionsPage = page(() => import('./pages/citations/SuggestionsPage'), 'SuggestionsPage');
 const SalesAuditPage = page(() => import('./pages/sales-audit/SalesAuditPage'), 'SalesAuditPage');
 const LeadsPage = page(() => import('./pages/leads/LeadsPage'), 'LeadsPage');
 const LeadDetailPage = page(() => import('./pages/leads/LeadDetailPage'), 'LeadDetailPage');
@@ -98,6 +99,7 @@ function App() {
 							<Route path="queue" element={<WorkQueuePage />} />
 							<Route path="directories" element={<DirectoriesPage />} />
 							<Route path="categories" element={<CategoriesPage />} />
+							<Route path="suggestions" element={<SuggestionsPage />} />
 						</Route>
 					</Route>
 

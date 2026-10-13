@@ -1,4 +1,4 @@
-import { ExternalLink, ListPlus, Plus, RotateCcw, Sparkles, StickyNote } from "lucide-react";
+import { ExternalLink, ListPlus, Plus, RotateCcw, Search, Sparkles, StickyNote } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -25,6 +25,7 @@ import { useQuery } from "../../hooks/useQuery";
 import { errorMessage } from "../../lib/api";
 import { formatPercent, formatRelative } from "../../lib/format";
 import { AddDirectoriesDialog, BulkResultDialog, SuggestDialog } from "./CitationDialogs";
+import { DiscoverDialog } from "./DiscoverDialog";
 import { EntryDialog } from "./EntryDialog";
 
 export function LocationCitationsPage() {
@@ -36,7 +37,7 @@ export function LocationCitationsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<"" | CitationStatus>("");
   const [openEntry, setOpenEntry] = useState<CitationEntry | null>(null);
-  const [dialog, setDialog] = useState<"suggest" | "add" | null>(null);
+  const [dialog, setDialog] = useState<"suggest" | "add" | "discover" | null>(null);
   const [bulkStatus, setBulkStatus] = useState<"" | CitationStatus>("");
   const [bulkNote, setBulkNote] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -147,6 +148,9 @@ export function LocationCitationsPage() {
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setDialog("add")}>
                 <Plus size={14} /> Add by hand
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setDialog("discover")} title="An AI web search; results wait in Suggested for review">
+                <Search size={14} /> Find local directories
               </Button>
             </div>
           )}
@@ -313,6 +317,11 @@ export function LocationCitationsPage() {
         canManage={canManage}
         onClose={() => setOpenEntry(null)}
         onSaved={replaceEntry}
+      />
+      <DiscoverDialog
+        open={dialog === "discover"}
+        onClose={() => setDialog(null)}
+        location={{ id: d.location.id, name: d.location.name, city: d.location.city }}
       />
       <SuggestDialog open={dialog === "suggest"} locationId={d.location.id} onClose={() => setDialog(null)} onAdded={data.reload} />
       <AddDirectoriesDialog

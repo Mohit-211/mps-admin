@@ -1,5 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { Ban, Pencil, Plus, RotateCcw, Upload } from "lucide-react";
+import { Ban, Pencil, Plus, RotateCcw, Sparkles, Upload } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ import { Notice } from "../../components/ui/Panel";
 import { Pagination } from "../../components/ui/Pagination";
 import { ErrorState } from "../../components/ui/States";
 import { useQuery } from "../../hooks/useQuery";
+import { DiscoverDialog } from "./DiscoverDialog";
 import { useUrlSearch, useUrlState } from "../../hooks/useUrlState";
 import { ApiError, errorMessage } from "../../lib/api";
 import { todayStamp } from "../../lib/format";
@@ -37,8 +38,9 @@ import { todayStamp } from "../../lib/format";
 const LIMIT = 50;
 
 export function DirectoriesPage() {
-  const { can } = useAuth();
+  const { can, admin } = useAuth();
   const canManage = can("citations.manage");
+  const [discovering, setDiscovering] = useState(false);
   const { get, update, page, setPage } = useUrlState();
   const { search, setSearch, q } = useUrlSearch();
   const type = get("type") as "" | DirectoryType;
@@ -181,6 +183,11 @@ export function DirectoriesPage() {
         </DownloadButton>
         {canManage && (
           <>
+            {admin?.citation_scope !== "assigned" && (
+              <Button size="sm" variant="secondary" onClick={() => setDiscovering(true)}>
+                <Sparkles size={14} /> Discover directories
+              </Button>
+            )}
             <Button size="sm" variant="secondary" onClick={() => setImporting(true)}>
               <Upload size={14} /> Import CSV
             </Button>
@@ -219,6 +226,7 @@ export function DirectoriesPage() {
           onSaved={dirs.reload}
         />
       )}
+      <DiscoverDialog open={discovering} onClose={() => setDiscovering(false)} />
       {importing && <ImportDialog onClose={() => setImporting(false)} onApplied={dirs.reload} />}
       <ConfirmDialog
         open={!!deactivating}

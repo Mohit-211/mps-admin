@@ -8,6 +8,7 @@ const SECTIONS = [
   { to: "/citations/locations", label: "Locations" },
   { to: "/citations/queue", label: "Work queue" },
   { to: "/citations/directories", label: "Directories" },
+  { to: "/citations/suggestions", label: "Suggested" },
   { to: "/citations/categories", label: "Categories" },
 ];
 

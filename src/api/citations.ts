@@ -209,6 +209,67 @@ export type QueueFilters = {
   limit?: number;
 };
 
+// ---- directory discovery (Phase 22): Perplexity suggestions, reviewed by an admin ----
+
+export type SuggestionStatus = "pending" | "accepted" | "dismissed";
+export type DiscoveryScope = "general" | "category" | "location";
+
+export type DirectorySuggestion = {
+  id: string;
+  name: string;
+  url: string;
+  domain: string;
+  type: DirectoryType;
+  countries: CitationCountry[];
+  regions: string[];
+  category_ids: string[];
+  why: string | null;
+  sources: string[];
+  /** ok: false = the site didn't answer when checked; review before accepting. */
+  url_check: { ok: boolean; reason: string | null; checked_at: string | null } | null;
+  scope: {
+    kind: DiscoveryScope;
+    country: CitationCountry | null;
+    region: string | null;
+    city: string | null;
+    business_category: string | null;
+    location_id: string | null;
+  };
+  status: SuggestionStatus;
+  directory_id: string | null;
+  note: string | null;
+  created_by: { admin_id: string | null; name: string | null } | null;
+  decided_by: { admin_id: string | null; name: string | null } | null;
+  decided_at: string | null;
+  created_at: string;
+};
+
+export type DiscoverInput =
+  | { scope: "general"; country: CitationCountry; region?: string; count?: number }
+  | { scope: "category"; country: CitationCountry; business_category_id: string; count?: number }
+  | { scope: "location"; location_id: string; count?: number };
+
+export type AcceptInput = Partial<{
+  name: string;
+  url: string;
+  type: DirectoryType;
+  countries: CitationCountry[];
+  regions: string[];
+  category_ids: string[];
+  authority: number | null;
+  add_to_location: boolean;
+}>;
+
+export const DISCOVERY_ERRORS: Record<string, string> = {
+  perplexity_not_configured: "Directory discovery isn't set up yet.",
+  perplexity_budget_reached: "Discovery is paused for today (the daily budget is used up).",
+  perplexity_failed: "The search failed. Try again.",
+  assigned_locations_only: "You can only search for local directories of your assigned locations.",
+  country_required: "Choose a country.",
+  business_category_required: "Choose a business category.",
+  unsupported_country: "Only US and Canadian locations can be searched.",
+};
+
 type Page<K extends string, T> = { [key in K]: T[] } & { page: number; limit: number; total: number };
 
 export const citationsApi = {
@@ -323,6 +384,27 @@ export const citationsApi = {
   ) => api<DirectoryCategory>(`/admin/citations/categories/${categoryId}`, { method: "PATCH", body }),
   deleteCategory: (categoryId: string) =>
     api<{ deleted: true }>(`/admin/citations/categories/${categoryId}`, { method: "DELETE" }),
+  // directory discovery
+  discover: (body: DiscoverInput) =>
+    api<{ created: DirectorySuggestion[]; skipped_duplicates: number; sources: string[]; cost_usd: number }>(
+      "/admin/citations/directory-suggestions/discover",
+      { method: "POST", body },
+    ),
+  suggestions: (
+    query: { status?: SuggestionStatus; scope?: DiscoveryScope; country?: CitationCountry; location_id?: string; page?: number; limit?: number },
+    signal?: AbortSignal,
+  ) => api<Page<"suggestions", DirectorySuggestion>>("/admin/citations/directory-suggestions", { query, signal }),
+  acceptSuggestion: (suggestionId: string, body: AcceptInput) =>
+    api<{ suggestion: DirectorySuggestion; directory: Directory; added_to_location: { location_id: string } | null }>(
+      `/admin/citations/directory-suggestions/${suggestionId}/accept`,
+      { method: "POST", body },
+    ),
+  dismissSuggestion: (suggestionId: string, note?: string) =>
+    api<DirectorySuggestion>(`/admin/citations/directory-suggestions/${suggestionId}/dismiss`, {
+      method: "POST",
+      body: note ? { note } : {},
+    }),
+
   businessCategories: (q: string, signal?: AbortSignal) =>
     api<{ id: string; name: string }[]>("/admin/citations/business-categories", { query: { q }, signal }),
 };

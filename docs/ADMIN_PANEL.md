@@ -268,6 +268,8 @@ Locations index (2026-10-08, #190), directory master list, categories, CSV impor
 
 **Staff assignments (Phase 21, 2026-10-12):** an employee with assigned locations (section 4) sees and edits citations of **only** those locations; everything else is a 404 and bulk skips it. Their own `GET /admin/auth/me` → `citation_scope: "assigned"`, `assigned_locations`. The index rows carry `assigned_staff`, and `?assigned_admin_id=` lists one employee's locations. Details: API.md "Staff assigned to locations (Phase 21)".
 
+**Directory discovery (Phase 22, 2026-10-13):** `POST /admin/citations/directory-suggestions/discover` (Perplexity) fills a review list; `GET …/directory-suggestions`, `POST …/:id/accept` (creates the directory, optionally lists it for the location), `POST …/:id/dismiss`. Guide: [AI_ASSIST_ADMIN_CLAUDE_NOTE.md](AI_ASSIST_ADMIN_CLAUDE_NOTE.md).
+
 **Screen-by-screen guide for the admin frontend:** [CITATIONS_ADMIN_CLAUDE_NOTE.md](CITATIONS_ADMIN_CLAUDE_NOTE.md). Start from the locations index (`GET /admin/citations/locations`): it lists every location, including those without a list (`citations: null`) and those with nothing left unchecked, which the work queue doesn't show.
 
 ## 12. Not available yet (don't build UI that needs these)

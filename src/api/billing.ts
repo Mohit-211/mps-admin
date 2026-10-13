@@ -40,6 +40,8 @@ export type AiTokenCosts = {
   insights: number;
   post_draft: number;
   post_image: number;
+  /** Phase 22: AI post topic ideas. */
+  post_topics: number;
 };
 
 export const AI_COST_FIELDS: { key: keyof AiTokenCosts; label: string; fallback: number }[] = [
@@ -49,6 +51,7 @@ export const AI_COST_FIELDS: { key: keyof AiTokenCosts; label: string; fallback:
   { key: "insights", label: "Review insights", fallback: 2 },
   { key: "post_draft", label: "AI post text", fallback: 1 },
   { key: "post_image", label: "AI post image", fallback: 3 },
+  { key: "post_topics", label: "AI post topic ideas", fallback: 1 },
 ];
 
 export type PlanPrice = {

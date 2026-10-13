@@ -69,9 +69,13 @@ Reads, billing, support and GBP connect / bind stay open.
 
 ## Summary (2026-10-12)
 
-**308 endpoints:** 307 live, 1 dev-only.
-- **By origin:** 276 rebuilt or new, 32 legacy.
-- **By auth:** 148 user, 116 platform admin (each with a permission), 44 none.
+**315 endpoints:** 314 live, 1 dev-only.
+- **By origin:** 283 rebuilt or new, 32 legacy.
+- **By auth:** 151 user, 120 platform admin (each with a permission), 44 none.
+
+**Phase 22 (AI assist, 2026-10-13):** `POST /locations/:locationId/keywords/suggest` (#226, free AI keyword suggestions), `POST /locations/:locationId/posts/ai-topics` (#227); admin directory discovery `/admin/citations/directory-suggestions*` (#228–#231). `POST …/posts/ai-draft` takes `keywords` and `avoid`; review reply drafts follow new rules (no shape change).
+
+**Posts follow-ups (2026-10-12):** `POST /locations/:locationId/posts/validate` (#225, the editor's live check); `GET …/posts/media` is paged; auto-post series take `time_zone` (the user's).
 
 **Phase 21 (team assignments, 2026-10-12):** `GET/PUT /admin/admins/:adminId/locations` (`admins.manage`): the customer locations a MyPageSEO employee works on in the citation admin (a hard limit). Agency members limited to clients use the existing team routes with `client_ids`. Shapes: API.md "Members limited to clients" and "Staff assigned to locations".
 
@@ -261,7 +265,8 @@ Paths are full paths. Auth: `none`, `user` (user access token), `user + org` (ac
 | GET | `/api/v1/locations/:locationId/competitor-suggestions` | user + owner | Top 10 competitors across keywords (Places Enterprise, 24 h cache, daily cap) | 7a | live |
 | GET | `/api/v1/places/autocomplete` | user + org (owner/member) | City / region / ZIP suggestions for the setup center (Autocomplete (New), one session token per picker; rate-limited per user, not charged to the daily Places limit) | 2026-10-01 | live |
 | GET | `/api/v1/places/search` | user + org (owner/member) | Places search (Pro, 10 results, daily cap): a competitor search with `locationId`, or an add-location search without it (Phase 8, `country`) | 7a, changed 8 | live |
-| PUT | `/api/v1/locations/:locationId/center` | user + owner | Manual business center: `{ query }` (1 IDs-only search + 1 Details `location`) or a picked suggestion `{ place_id, session? }` (1 Details Essentials call ending the session; 2026-10-01) | 7a, changed 2026-10-01 | live |
+| PUT | `/api/v1/locations/:locationId/center` | user + owner | Business center: `{ query }` (1 IDs-only search + 1 Details `location`), a picked suggestion `{ place_id, session? }`, or (2026-10-12) `{ use_business_location: true }` (the business's own place, 1 Details `location`) (1 Details Essentials call ending the session; 2026-10-01) | 7a, changed 2026-10-01 | live |
+| POST | `/api/v1/locations/:locationId/keywords/suggest` | user + owner | AI keyword suggestions from the business's website and Google profile (`{ more? }`; free, at least 7, no duplicates of tracked or shown keywords; 20 runs per location per day) | 22 | live |
 
 ### Refresh and GBP sync
 
@@ -306,11 +311,12 @@ Reads for every member (client_user: its clients' locations); changes need owner
 |---|---|---|---|---|---|
 | GET | `/api/v1/locations/:locationId/posts` | user + owner | Posts of the location (filters: status list, type, source, date range; pages), each with `issues` (what blocks publishing) and `warnings` | 9 | live |
 | POST | `/api/v1/locations/:locationId/posts` | user + owner | Create a post: a draft (may be incomplete), or `action: schedule \| publish` (through approval when required) | 9 | live |
+| POST | `/api/v1/locations/:locationId/posts/validate` | user + owner | The editor's live check: a post's `issues` and `warnings` without saving it (no Google call, no tokens) | 2026-10-12 | live |
 | GET | `/api/v1/locations/:locationId/posts/summary` | user + owner | Counts by status, last / next post, posting settings, connection (GBP, v4, photos publishable), and what the caller may do (needs approval, can approve) | 9 | live |
 | GET | `/api/v1/locations/:locationId/posts/calendar` | user + owner | Dated posts (published / scheduled) between `from` and `to` (≤ 93 days) | 9 | live |
 | POST | `/api/v1/locations/:locationId/posts/refresh` | user + owner | Refresh posts: read states back from Google and import posts made on Google (free; once per 15 min) | 9 | live |
 | PUT | `/api/v1/locations/:locationId/posts/settings` | user + owner | Posting settings: approval `off \| team \| client`, default button, language (owner only) | 9 | live |
-| GET | `/api/v1/locations/:locationId/posts/media` | user + owner | The location's post photos (newest 50) | 9 | live |
+| GET | `/api/v1/locations/:locationId/posts/media` | user + owner | The location's post photos, newest first (2026-10-12: `page`, `limit`) | 9 | live |
 | POST | `/api/v1/locations/:locationId/posts/media` | user + owner | Upload a post photo (multipart `file`, JPEG / PNG ≤ 5 MB, ≥ 250×250; stored as a 4:3 JPEG without metadata) | 9 | live |
 | DELETE | `/api/v1/locations/:locationId/posts/media/:mediaId` | user + owner | Delete a photo (409 while an unpublished post uses it) | 9 | live |
 | GET | `/api/v1/locations/:locationId/posts/:postId` | user + owner | One post | 9 | live |
@@ -323,7 +329,8 @@ Reads for every member (client_user: its clients' locations); changes need owner
 | POST | `/api/v1/locations/:locationId/posts/:postId/duplicate` | user + owner | Copy a post as a new draft | 9 | live |
 | POST | `/api/v1/locations/:locationId/posts/:postId/approve` | user + owner (read; approver role checked) | Approve a waiting post: it publishes at its time (or now) | 9 | live |
 | POST | `/api/v1/locations/:locationId/posts/:postId/reject` | user + owner (read; approver role checked) | Send a waiting post back to drafts with a note | 9 | live |
-| POST | `/api/v1/locations/:locationId/posts/ai-draft` | user + owner | AI post text: 1–3 variants for a topic and tone (OpenAI; `post_draft` tokens) | 9.1 | live |
+| POST | `/api/v1/locations/:locationId/posts/ai-topics` | user + owner | AI post ideas from the business, keywords, season and upcoming holidays (`post_topics` tokens) | 22 | live |
+| POST | `/api/v1/locations/:locationId/posts/ai-draft` | user + owner | AI post text: 1–3 variants for a topic and tone (OpenAI; `post_draft` tokens); 22: `keywords` to weave in, `avoid` for Redo | 9.1 | live |
 | POST | `/api/v1/locations/:locationId/posts/ai-image` | user + owner | AI image for a post or a description, stored as a post photo (OpenAI Images; `post_image` tokens) | 9.1 | live |
 | POST | `/api/v1/locations/:locationId/posts/:postId/ai-regenerate` | user + owner | New AI text and / or image for a post not on Google yet (a scheduled post keeps its time) | 9.1 | live |
 | GET | `/api/v1/locations/:locationId/post-series` | user + owner | AI auto-post series of the location (with next slots and recent outcomes) | 9.1 | live |
@@ -365,6 +372,10 @@ Manual, admin-managed citation tracking (no external citation APIs). Admin route
 | DELETE | `/api/v1/admin/citations/entries/:entryId` | admin (`citations.manage`) | Take a directory off the location's list (history kept) | 16 | live |
 | POST | `/api/v1/admin/citations/entries/:entryId/restore` | admin (`citations.manage`) | Put a directory back on the list | 16 | live |
 | GET | `/api/v1/admin/citations/entries/:entryId/history` | admin (`citations.view`) | Every change of one entry (who, when, from → to, fields, note) | 16 | live |
+| POST | `/api/v1/admin/citations/directory-suggestions/discover` | admin (`citations.manage`) | Ask Perplexity for directories (`scope: general \| category \| location`); new ones land in the review list (known and dismissed domains skipped) | 22 | live |
+| GET | `/api/v1/admin/citations/directory-suggestions` | admin (`citations.view`) | The directory suggestions to review (`status` pending by default, `scope`, `country`, `location_id`) | 22 | live |
+| POST | `/api/v1/admin/citations/directory-suggestions/:suggestionId/accept` | admin (`citations.manage`) | Accept a suggestion: creates the directory (fields may be corrected), optionally lists it for the suggestion's location | 22 | live |
+| POST | `/api/v1/admin/citations/directory-suggestions/:suggestionId/dismiss` | admin (`citations.manage`) | Dismiss a suggestion (its domain is not suggested again) | 22 | live |
 | GET | `/api/v1/admin/citations/queue/unchecked` | admin (`citations.view`) | Work queue: locations with unchecked citations, waiting longest first | 16 | live |
 | GET | `/api/v1/admin/citations/queue/stale` | admin (`citations.view`) | Work queue: entries not checked for N days (`CITATION_STALE_DAYS`, default 90) | 16 | live |
 | GET | `/api/v1/admin/citations/queue/recent` | admin (`citations.view`) | Work queue: changes of the last N days (default 7) | 16 | live |
@@ -643,7 +654,7 @@ All three read the latest `done` or `partial` run, or the run given by `runId`.
 | # | Method | Path | Auth | Path / query params | Body | Returns |
 |---|---|---|---|---|---|---|
 | 17 | GET | `/onboarding/state` | user | – | – | `{ gbp: { connected, connections: [{ google_sub, google_email, status }] }, locations: [{ location_id, name, onboarding: { step, started_at, completed_at } }] }` |
-| 19b | PUT | `/locations/:locationId/center` | user, owner | `locationId` | `{ query }` (city or ZIP, 2–100 chars) **or** `{ place_id, session? }` (a picked `/places/autocomplete` suggestion and its session token; 2026-10-01) | `{ lat, lng, center_source: "manual", center_label, api_calls, onboarding_step? }` |
+| 19b | PUT | `/locations/:locationId/center` | user, owner | `locationId` | `{ query }` (city or ZIP, 2–100 chars) **or** `{ place_id, session? }` (a picked `/places/autocomplete` suggestion and its session token; 2026-10-01) **or** `{ use_business_location: true }` (2026-10-12; `center_source: place_details`; **400** `no_place_id`, **404** `no_business_location`) | `{ lat, lng, center_source: "manual", center_label, api_calls, onboarding_step? }` |
 | 20 | GET | `/locations/:locationId/competitor-suggestions` | user, owner | `locationId`; query `refresh` (optional boolean) | – | `{ generated_at, cached, keywords_used, api_calls, suggestions: [{ place_id, name, address, rating, userRatingCount, best_position, keywords, already_selected }], attribution }` |
 | 158 | GET | `/places/autocomplete` | user + org (owner/member) | query `q` (1–100 chars), `session` (required: one token per picker, URL-safe, 8–36 chars, e.g. a UUID), `country` (US\|CA) or `locationId` (its country), else the organization's | – | `{ suggestions: [{ place_id, description, main_text, secondary_text, types }], attribution }`; 120 requests per user per hour (**429** `rate_limited`) |
 | 21 | GET | `/places/search` | user, owner (via `locationId`) | query `q` (required, 2–100 chars), `locationId` (required, 24-hex) | – | `{ results: [{ place_id, name, address }], api_calls, attribution }` |
@@ -936,7 +947,7 @@ Money is in the organization's currency (US → USD, CA → CAD). Errors carry `
 | 194 | GET | `/locations/:locationId/posts/calendar` | user, owner | query `from`, `to` (ISO, ≤ 93 days) | `{ from, to, items: [{ post_id, location_id, type, status, source, date, summary (≤ 140), event, recurrence }] }`; **400** `range_too_long`, `invalid_range` |
 | 195 | POST | `/locations/:locationId/posts/refresh` | user, owner (write) | – | `{ updated, imported, missing, refreshed_at, next_allowed_at }`; **429** `refresh_too_soon` + `next_allowed_at`; **400** `gbp_not_connected`, `v4_access_pending`; **502** with Google's reason |
 | 196 | PUT | `/locations/:locationId/posts/settings` | user, owner (owner role) | `{ approval?: off\|team\|client, default_cta?: { type, url } \| null, language_code? }` | `{ settings }`; **403** `owner_only`; **400** `no_client` (client approval needs a client) |
-| 197 | GET | `/locations/:locationId/posts/media` | user, owner | – | `{ media: [{ media_id, kind: upload\|ai, url, width, height, bytes, created_at }] }` |
+| 197 | GET | `/locations/:locationId/posts/media` | user, owner | query `page` (1), `limit` (≤ 100, 50) | `{ media: [{ media_id, kind: upload\|ai, url, width, height, bytes, created_at }], page, limit, total }` |
 | 198 | POST | `/locations/:locationId/posts/media` | user, owner (write) | multipart `file` | **201** media; **400** `media_type`, `media_too_small`, `media_too_large`, `media_too_plain`, `media_unreadable`, `invalid_upload` |
 | 199 | DELETE | `/locations/:locationId/posts/media/:mediaId` | user, owner (write) | – | `{ media_id, deleted: true }`; **409** `media_in_use`; **404** `media_not_found` |
 | 200 | GET | `/locations/:locationId/posts/:postId` | user, owner | – | post; **404** `post_not_found` |
@@ -954,7 +965,7 @@ Money is in the organization's currency (US → USD, CA → CAD). Errors carry `
 | 214 | POST | `/locations/:locationId/posts/ai-image` | user, owner (write) | `{ post_id? \| prompt_hint?: 3–500, style? }` (style keys in API.md) | **201** `{ media: { media_id, kind: "ai", url, width, height, … }, style, tokens_spent }`; errors as #213; **404** `post_not_found`; **400** `subject_required` |
 | 215 | POST | `/locations/:locationId/posts/:postId/ai-regenerate` | user, owner (write) | `{ text?: true, image?: false, topic?, tone? }` | `{ post, tokens_spent }`; **409** `invalid_status` (only draft, scheduled, waiting or failed posts); errors as #213 |
 | 216 | GET | `/locations/:locationId/post-series` | user, owner | – | `{ series: [series], limit: 3 }`; series shape in API.md |
-| 217 | POST | `/locations/:locationId/post-series` | user, owner (write) | `{ name, cadence: { kind: weekly, days_of_week } \| { kind: every_n_days, n: 1–30 } \| { kind: monthly, day_of_month: 1–28 }, time_of_day: "HH:mm", starts_on, ends_on?, topics: [1–20], tone?, cta?, include_image? (true), language_code?, instructions? (≤ 500), lead_hours? (12–168, 48) }` | **201** series; **400** `gbp_not_connected`, `ends_before_start`, `no_days`; **409** `too_many_series` |
+| 217 | POST | `/locations/:locationId/post-series` | user, owner (write) | `{ name, cadence: { kind: weekly, days_of_week } \| { kind: every_n_days, n: 1–30 } \| { kind: monthly, day_of_month: 1–28 }, time_of_day: "HH:mm", time_zone? (IANA; 2026-10-12: the user's zone, null = the location's), starts_on, ends_on?, topics: [1–20], tone?, cta?, include_image? (true), language_code?, instructions? (≤ 500), lead_hours? (12–168, 48) }` | **201** series; **400** `gbp_not_connected`, `ends_before_start`, `no_days`; **409** `too_many_series` |
 | 218 | GET | `/locations/:locationId/post-series/:seriesId` | user, owner | – | series; **404** `series_not_found` |
 | 219 | PATCH | `/locations/:locationId/post-series/:seriesId` | user, owner (write) | any field of #217 | series |
 | 220 | DELETE | `/locations/:locationId/post-series/:seriesId` | user, owner (write) | query `keep_scheduled` (false) | `{ series_id, deleted: true, posts_unscheduled }` |
@@ -962,6 +973,13 @@ Money is in the organization's currency (US → USD, CA → CAD). Errors carry `
 | 222 | POST | `/locations/:locationId/post-series/:seriesId/resume` | user, owner (write) | – | series; **409** `too_many_series` |
 | 223 | GET | `/locations/:locationId/post-series/:seriesId/preview` | user, owner | query `count` (1–20, 5) | `{ time_zone, slots: [{ slot_at, topic, generates_at }] }` |
 | 224 | POST | `/locations/:locationId/post-series/:seriesId/generate-next` | user, owner (write) | – | **201** `{ series, post }`; **409** `no_slots`; **402** / **503** / **502** with the AI reason |
+| 225 | POST | `/locations/:locationId/posts/validate` | user, owner (write) | post fields as #192 (`type` required) + `scheduled_at?` | `{ issues: [{ field, code, message }], warnings: [{ code, message }], complete }`; nothing saved |
+| 226 | POST | `/locations/:locationId/keywords/suggest` | user, owner (write) | `{ more?: boolean }` | `{ suggestions: [{ keyword, reason, source: website\|profile\|category }], website_used, website_note: no_website\|unreachable\|not_html\|null, can_suggest_more, runs_left_today }`; free; **429** `suggestion_limit_reached` (20 runs per location per day); **503** / **502** with the AI reason |
+| 227 | POST | `/locations/:locationId/posts/ai-topics` | user, owner (write) | `{ count?: 5–8 (6), focus? (≤ 200) }` | `{ topics: [{ topic, angle, type: standard\|event\|offer, keywords: [≤ 2 tracked], why }], tokens_spent }`; `post_topics` tokens; **402** / **503** / **502** with the AI reason |
+| 228 | POST | `/admin/citations/directory-suggestions/discover` | admin (`citations.manage`) | `{ scope: general\|category\|location, country (general / category), region?, business_category_id (category), location_id (location), count?: 5–25 (15) }` | **201** `{ created: [suggestion], skipped_duplicates, sources, cost_usd }`; **400** `country_required`, `business_category_required`, `unsupported_country`; **403** `assigned_locations_only`; **503** `perplexity_not_configured`, `perplexity_budget_reached`; **502** `perplexity_failed` |
+| 229 | GET | `/admin/citations/directory-suggestions` | admin (`citations.view`) | query `status` (pending), `scope`, `country`, `location_id`, `page`, `limit` | `{ suggestions: [{ id, name, url, domain, type, countries, regions, category_ids, why, sources, url_check: { ok, reason, checked_at }, scope, status, directory_id, note, created_by, decided_by, decided_at, created_at }], page, limit, total }` |
+| 230 | POST | `/admin/citations/directory-suggestions/:suggestionId/accept` | admin (`citations.manage`) | `{ name?, url?, type?, countries?, regions?, category_ids?, authority?, add_to_location? }` | `{ suggestion, directory, added_to_location }`; **409** `already_decided`, `domain_taken`; **400** `invalid_directory` |
+| 231 | POST | `/admin/citations/directory-suggestions/:suggestionId/dismiss` | admin (`citations.manage`) | `{ note? }` | suggestion (`dismissed`); **409** `already_decided` |
 
 ## Removed endpoints
 
