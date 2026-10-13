@@ -29,6 +29,7 @@ import { useUrlState } from "../../hooks/useUrlState";
 import { ApiError, errorMessage } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { DiscoverDialog } from "./DiscoverDialog";
+import { useDiscoveryRuns } from "./discoveryRunsContext";
 
 const LIMIT = 25;
 
@@ -47,7 +48,9 @@ export function SuggestionsPage() {
   const [discovering, setDiscovering] = useState(false);
 
   const query = { status, scope: scope || undefined, country: country || undefined, location_id: locationId || undefined, page, limit: LIMIT };
-  const list = useQuery(`suggestions:${JSON.stringify(query)}`, (signal) => citationsApi.suggestions(query, signal));
+  // refresh when a background search finishes
+  const { finished } = useDiscoveryRuns();
+  const list = useQuery(`suggestions:${JSON.stringify(query)}:${finished}`, (signal) => citationsApi.suggestions(query, signal));
   const categories = useQuery("cit-categories", (signal) => citationsApi.categories(signal));
   const rows = list.data?.suggestions ?? [];
   const pending = status === "pending" && canManage;

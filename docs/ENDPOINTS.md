@@ -69,9 +69,9 @@ Reads, billing, support and GBP connect / bind stay open.
 
 ## Summary (2026-10-12)
 
-**315 endpoints:** 314 live, 1 dev-only.
-- **By origin:** 283 rebuilt or new, 32 legacy.
-- **By auth:** 151 user, 120 platform admin (each with a permission), 44 none.
+**316 endpoints:** 315 live, 1 dev-only.
+- **By origin:** 284 rebuilt or new, 32 legacy.
+- **By auth:** 151 user, 121 platform admin (each with a permission), 44 none.
 
 **Phase 22 (AI assist, 2026-10-13):** `POST /locations/:locationId/keywords/suggest` (#226, free AI keyword suggestions), `POST /locations/:locationId/posts/ai-topics` (#227); admin directory discovery `/admin/citations/directory-suggestions*` (#228–#231). `POST …/posts/ai-draft` takes `keywords` and `avoid`; review reply drafts follow new rules (no shape change).
 
@@ -372,7 +372,8 @@ Manual, admin-managed citation tracking (no external citation APIs). Admin route
 | DELETE | `/api/v1/admin/citations/entries/:entryId` | admin (`citations.manage`) | Take a directory off the location's list (history kept) | 16 | live |
 | POST | `/api/v1/admin/citations/entries/:entryId/restore` | admin (`citations.manage`) | Put a directory back on the list | 16 | live |
 | GET | `/api/v1/admin/citations/entries/:entryId/history` | admin (`citations.view`) | Every change of one entry (who, when, from → to, fields, note) | 16 | live |
-| POST | `/api/v1/admin/citations/directory-suggestions/discover` | admin (`citations.manage`) | Ask Perplexity for directories (`scope: general \| category \| location`); new ones land in the review list (known and dismissed domains skipped) | 22 | live |
+| POST | `/api/v1/admin/citations/directory-suggestions/discover` | admin (`citations.manage`) | Start a Perplexity directory search in the background (`scope: general \| category \| location`); answers 202 with a run to poll; new suggestions land in the review list (known and dismissed domains skipped) | 22 | live |
+| GET | `/api/v1/admin/citations/directory-suggestions/discover/:runId` | admin (`citations.view`) | A discovery search's status (`queued \| running \| done \| failed`) and, when done, its new suggestions | 22 | live |
 | GET | `/api/v1/admin/citations/directory-suggestions` | admin (`citations.view`) | The directory suggestions to review (`status` pending by default, `scope`, `country`, `location_id`) | 22 | live |
 | POST | `/api/v1/admin/citations/directory-suggestions/:suggestionId/accept` | admin (`citations.manage`) | Accept a suggestion: creates the directory (fields may be corrected), optionally lists it for the suggestion's location | 22 | live |
 | POST | `/api/v1/admin/citations/directory-suggestions/:suggestionId/dismiss` | admin (`citations.manage`) | Dismiss a suggestion (its domain is not suggested again) | 22 | live |
@@ -976,10 +977,11 @@ Money is in the organization's currency (US → USD, CA → CAD). Errors carry `
 | 225 | POST | `/locations/:locationId/posts/validate` | user, owner (write) | post fields as #192 (`type` required) + `scheduled_at?` | `{ issues: [{ field, code, message }], warnings: [{ code, message }], complete }`; nothing saved |
 | 226 | POST | `/locations/:locationId/keywords/suggest` | user, owner (write) | `{ more?: boolean }` | `{ suggestions: [{ keyword, reason, source: website\|profile\|category }], website_used, website_note: no_website\|unreachable\|not_html\|null, can_suggest_more, runs_left_today }`; free; **429** `suggestion_limit_reached` (20 runs per location per day); **503** / **502** with the AI reason |
 | 227 | POST | `/locations/:locationId/posts/ai-topics` | user, owner (write) | `{ count?: 5–8 (6), focus? (≤ 200) }` | `{ topics: [{ topic, angle, type: standard\|event\|offer, keywords: [≤ 2 tracked], why }], tokens_spent }`; `post_topics` tokens; **402** / **503** / **502** with the AI reason |
-| 228 | POST | `/admin/citations/directory-suggestions/discover` | admin (`citations.manage`) | `{ scope: general\|category\|location, country (general / category), region?, business_category_id (category), location_id (location), count?: 5–25 (15) }` | **201** `{ created: [suggestion], skipped_duplicates, sources, cost_usd }`; **400** `country_required`, `business_category_required`, `unsupported_country`; **403** `assigned_locations_only`; **503** `perplexity_not_configured`, `perplexity_budget_reached`; **502** `perplexity_failed` |
+| 228 | POST | `/admin/citations/directory-suggestions/discover` | admin (`citations.manage`) | `{ scope: general\|category\|location, country (general / category), region?, business_category_id (category), location_id (location), count?: 5–25 (15) }` | **202** run `{ run_id, status: queued, input, created: [], … }` (2026-10-13: the search runs in the background; poll #232); **400** `country_required`, `business_category_required`, `unsupported_country`; **403** `assigned_locations_only`; **503** `perplexity_not_configured`, `perplexity_budget_reached`; **502** `perplexity_failed` |
 | 229 | GET | `/admin/citations/directory-suggestions` | admin (`citations.view`) | query `status` (pending), `scope`, `country`, `location_id`, `page`, `limit` | `{ suggestions: [{ id, name, url, domain, type, countries, regions, category_ids, why, sources, url_check: { ok, reason, checked_at }, scope, status, directory_id, note, created_by, decided_by, decided_at, created_at }], page, limit, total }` |
 | 230 | POST | `/admin/citations/directory-suggestions/:suggestionId/accept` | admin (`citations.manage`) | `{ name?, url?, type?, countries?, regions?, category_ids?, authority?, add_to_location? }` | `{ suggestion, directory, added_to_location }`; **409** `already_decided`, `domain_taken`; **400** `invalid_directory` |
 | 231 | POST | `/admin/citations/directory-suggestions/:suggestionId/dismiss` | admin (`citations.manage`) | `{ note? }` | suggestion (`dismissed`); **409** `already_decided` |
+| 232 | GET | `/admin/citations/directory-suggestions/discover/:runId` | admin (`citations.view`) | – | `{ run_id, status: queued\|running\|done\|failed, input, created: [suggestion], skipped_duplicates, sources, cost_usd, error: { code, message } \| null, created_by, created_at, started_at, finished_at }`; failed codes: `perplexity_failed`, `perplexity_budget_reached`, `perplexity_not_configured`, `timed_out` (10 min), …; **404** |
 
 ## Removed endpoints
 

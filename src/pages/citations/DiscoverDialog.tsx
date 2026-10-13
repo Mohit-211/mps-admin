@@ -1,7 +1,5 @@
-import { Loader2, Search, Sparkles } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 
 import { citationsApi, DISCOVERY_ERRORS, type CitationCountry, type DiscoverInput } from "../../api/citations";
 import { useAuth } from "../../auth/useAuth";
@@ -13,6 +11,7 @@ import { Notice } from "../../components/ui/Panel";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useQuery } from "../../hooks/useQuery";
 import { ApiError, errorMessage } from "../../lib/api";
+import { useDiscoveryRuns } from "./discoveryRunsContext";
 
 type Props = {
   open: boolean;
@@ -30,8 +29,8 @@ export function DiscoverDialog(props: Props) {
 }
 
 function DiscoverBody({ onClose, location }: Props) {
-  const navigate = useNavigate();
-  const { admin, can } = useAuth();
+  const { admin } = useAuth();
+  const { track } = useDiscoveryRuns();
   const [scope, setScope] = useState<"general" | "category">("general");
   const [country, setCountry] = useState<CitationCountry>("US");
   const [region, setRegion] = useState("");
@@ -58,17 +57,18 @@ function DiscoverBody({ onClose, location }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const result = await citationsApi.discover(body);
-      const n = result.created.length;
-      toast.success(`${n} new suggestion${n === 1 ? "" : "s"}${result.skipped_duplicates ? ` (${result.skipped_duplicates} skipped: already on the list or suggested before)` : ""}.`, {
-        // cost is for super admins only
-        description: can("admins.manage") ? `Search cost: $${result.cost_usd.toFixed(4)}` : undefined,
-      });
-      const params = new URLSearchParams({ scope: body.scope });
-      if (body.scope === "location") params.set("location_id", body.location_id);
-      else params.set("country", body.country);
+      // 202: the search runs in the background; the run tracker polls it and shows progress
+      const run = await citationsApi.discover(body);
+      const label =
+        body.scope === "location"
+          ? `${location?.name ?? "Location"}${location?.city ? `, ${location.city}` : ""}`
+          : body.scope === "category"
+            ? `${category?.name ?? "Category"} · ${body.country}`
+            : `General · ${body.country}${"region" in body && body.region ? ` (${body.region})` : ""}`;
+      const filters: Record<string, string> =
+        body.scope === "location" ? { scope: "location", location_id: body.location_id } : { scope: body.scope, country: body.country };
+      track(run, label, filters);
       onClose();
-      navigate(`/citations/suggestions?${params.toString()}`);
     } catch (e) {
       const reason = e instanceof ApiError ? e.reason : undefined;
       setError((reason && DISCOVERY_ERRORS[reason]) || errorMessage(e));
@@ -95,7 +95,7 @@ function DiscoverBody({ onClose, location }: Props) {
           </Button>
           <Button onClick={run} loading={busy} disabled={!location && limited}>
             {!busy && <Sparkles size={15} />}
-            {busy ? "Searching the web…" : "Search"}
+            Search
           </Button>
         </>
       }
@@ -192,11 +192,7 @@ function DiscoverBody({ onClose, location }: Props) {
           <input id="discover-count" type="range" min={5} max={25} value={count} onChange={(e) => setCount(Number(e.target.value))} className="w-full accent-[var(--color-primary)]" />
         </Field>
 
-        {busy && (
-          <p className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
-            <Loader2 size={15} className="animate-spin" /> Searching the web… this takes 10–30 seconds.
-          </p>
-        )}
+        <p className="text-xs text-[var(--color-text-muted)]">A search can take a minute or two. It runs in the background, so you can keep working.</p>
       </div>
     </Modal>
   );

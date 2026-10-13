@@ -260,10 +260,27 @@ export type AcceptInput = Partial<{
   add_to_location: boolean;
 }>;
 
+/** 2026-10-13: a discovery search runs in the background (202 + poll), since it can outlast the proxy's request limit. */
+export type DiscoveryRun = {
+  run_id: string;
+  status: "queued" | "running" | "done" | "failed";
+  input: DiscoverInput;
+  created: DirectorySuggestion[];
+  skipped_duplicates: number;
+  sources: string[];
+  cost_usd: number;
+  error: { code: string; message: string } | null;
+  created_by?: { admin_id: string | null; name: string | null } | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
 export const DISCOVERY_ERRORS: Record<string, string> = {
   perplexity_not_configured: "Directory discovery isn't set up yet.",
   perplexity_budget_reached: "Discovery is paused for today (the daily budget is used up).",
   perplexity_failed: "The search failed. Try again.",
+  timed_out: "The search didn't finish within 10 minutes. Try again.",
   assigned_locations_only: "You can only search for local directories of your assigned locations.",
   country_required: "Choose a country.",
   business_category_required: "Choose a business category.",
@@ -385,11 +402,11 @@ export const citationsApi = {
   deleteCategory: (categoryId: string) =>
     api<{ deleted: true }>(`/admin/citations/categories/${categoryId}`, { method: "DELETE" }),
   // directory discovery
+  /** Starts a background search (202): poll discoveryRun until done / failed. */
   discover: (body: DiscoverInput) =>
-    api<{ created: DirectorySuggestion[]; skipped_duplicates: number; sources: string[]; cost_usd: number }>(
-      "/admin/citations/directory-suggestions/discover",
-      { method: "POST", body },
-    ),
+    api<DiscoveryRun>("/admin/citations/directory-suggestions/discover", { method: "POST", body }),
+  discoveryRun: (runId: string, signal?: AbortSignal) =>
+    api<DiscoveryRun>(`/admin/citations/directory-suggestions/discover/${runId}`, { signal }),
   suggestions: (
     query: { status?: SuggestionStatus; scope?: DiscoveryScope; country?: CitationCountry; location_id?: string; page?: number; limit?: number },
     signal?: AbortSignal,

@@ -3297,7 +3297,7 @@ Reads every post of the location from Google (free), updates states (a post Goog
 
 ## AI posts and auto-posts (Phase 9.1)
 
-OpenAI only (text: `gpt-5-nano`; images: `OPENAI_IMAGE_MODEL`, default `gpt-image-1-mini`). Every AI action spends MyPageSEO tokens (`GET /billing` → `tokens.ai_costs`: `post_draft` 1, `post_image` 3 by default, admin-set). The tokens are refunded when OpenAI fails. Without a key: **503** `ai_not_configured`. Other errors: **402** `insufficient_tokens` `{ balance, cost }`, **503** `ai_budget_reached`, **502** `ai_failed`. Only public profile facts (name, category, city, description, services), tracked keywords and the last 5 post texts go to OpenAI.
+OpenAI only (text: `gpt-6-luna` since 2026-10-13, was `gpt-5-nano`; images: `OPENAI_IMAGE_MODEL`, default `gpt-image-1-mini`). Every AI action spends MyPageSEO tokens (`GET /billing` → `tokens.ai_costs`: `post_draft` 1, `post_image` 3 by default, admin-set). The tokens are refunded when OpenAI fails. Without a key: **503** `ai_not_configured`. Other errors: **402** `insufficient_tokens` `{ balance, cost }`, **503** `ai_budget_reached`, **502** `ai_failed`. Only public profile facts (name, category, city, description, services), tracked keywords and the last 5 post texts go to OpenAI.
 
 ### In the editor
 
@@ -3356,7 +3356,7 @@ The series object:
 
 ## AI assist (Phase 22)
 
-Decisions and scope: CLAUDE.md §12n. The text people read (keyword suggestions, review replies, post topics and text) uses `OPENAI_WRITING_MODEL` (default `gpt-5-mini`); analysis stays on `OPENAI_MODEL`. AI errors as in "AI errors (every AI route)": **503** `ai_not_configured` / `ai_budget_reached`, **502** `ai_failed`, **402** `insufficient_tokens` (not for keyword suggestions, which are free).
+Decisions and scope: CLAUDE.md §12n. The text people read (keyword suggestions, review replies, post topics and text) uses `OPENAI_WRITING_MODEL` (default `gpt-6-luna` since 2026-10-13); analysis stays on `OPENAI_MODEL`. AI errors as in "AI errors (every AI route)": **503** `ai_not_configured` / `ai_budget_reached`, **502** `ai_failed`, **402** `insufficient_tokens` (not for keyword suggestions, which are free).
 
 ### `POST /locations/:locationId/keywords/suggest { "more"?: false }`: keyword suggestions at setup
 
@@ -3414,7 +3414,7 @@ The AI posts follow Google's post guidelines. The full table of rules and checks
 ```json
 { "drafts": [ { "summary": "…", "event_title": null, "cta_type": "LEARN_MORE", "image_idea": "…",
                "warnings": [], "duplicate_risk": false, "compliant": true } ],
-  "compliant": true, "tokens_spent": 1, "model": "gpt-5-mini" }
+  "compliant": true, "tokens_spent": 1, "model": "gpt-6-luna" }
 ```
 
 - **Free retry:** a draft that breaks a hard rule gets one free retry naming the problems. Hard rules: phone or link in the text, capitals, "!!!", symbols, emoji, a guarantee / "#1" / "instant" claim, a copy of an earlier post, a lodging price or deal.
@@ -3433,7 +3433,16 @@ The AI posts follow Google's post guidelines. The full table of rules and checks
 
 Perplexity suggests citation directories; every suggestion waits in a review list until an admin accepts or dismisses it. `citations.view` to list; `citations.manage` to discover / accept / dismiss. An employee assigned to locations (Phase 21) can only discover and decide for those locations.
 
-`POST /api/v1/admin/citations/directory-suggestions/discover` (10–30 s; one Perplexity search):
+`POST /api/v1/admin/citations/directory-suggestions/discover`: one Perplexity search, **run in the background** (2026-10-13). A search can take a minute or more, longer than Cloudflare and nginx let a request run.
+
+**It answers at once** with **202** and a run: `{ "run_id", "status": "queued", "input", "created": [], … }`. Invalid searches, a missing key and a spent budget still answer at once with their errors.
+
+**Poll** `GET /api/v1/admin/citations/directory-suggestions/discover/:runId` every 3–5 s until `status` is `done` or `failed`:
+- **`done`:** `created` holds the new suggestions, plus `skipped_duplicates`, `sources` and `cost_usd`.
+- **`failed`:** `error: { code, message }`, with codes `perplexity_failed`, `perplexity_budget_reached`, `perplexity_not_configured`, or `timed_out` (no result within 10 minutes).
+- Runs are kept for 7 days.
+
+The search itself:
 
 | `scope` | Needs | Searches for |
 |---|---|---|
@@ -3441,13 +3450,15 @@ Perplexity suggests citation directories; every suggestion waits in a review lis
 | `category` | `country`, `business_category_id` | industry directories and associations for that business category |
 | `location` | `location_id` | local directories, chamber, local listings for its city / region and its business type |
 
+A finished run (`GET …/discover/:runId`):
+
 ```json
-{ "created": [ { "id": "…", "name": "Brantford Chamber of Commerce", "url": "https://brantfordchamber.example", "domain": "brantfordchamber.example",
+{ "run_id": "…", "status": "done", "created": [ { "id": "…", "name": "Brantford Chamber of Commerce", "url": "https://brantfordchamber.example", "domain": "brantfordchamber.example",
                  "type": "government_chamber", "countries": ["CA"], "regions": ["ON"], "category_ids": [], "why": "Local chamber; listings are trusted by Google.",
                  "sources": ["https://…"], "url_check": { "ok": true, "reason": null, "checked_at": "…" },
                  "scope": { "kind": "location", "country": "CA", "region": "ON", "city": "Brantford", "business_category": "Dog trainer", "location_id": "…" },
                  "status": "pending", "created_by": { "admin_id": "…", "name": "Ravi" }, "created_at": "…" } ],
-  "skipped_duplicates": 2, "sources": ["https://…"], "cost_usd": 0.0068 }
+  "skipped_duplicates": 2, "sources": ["https://…"], "cost_usd": 0.0068, "error": null, "started_at": "…", "finished_at": "…" }
 ```
 
 - **Never suggested again:** domains already on the master list, already suggested, or dismissed.

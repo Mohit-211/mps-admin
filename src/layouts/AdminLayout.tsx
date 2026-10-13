@@ -4,11 +4,14 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Topbar } from "../components/layout/Topbar";
 import { PageSpinner } from "../components/ui/PageSpinner";
+import { DiscoveryRunsProvider } from "../pages/citations/DiscoveryRuns";
 
 export function AdminLayout() {
   const [navOpen, setNavOpen] = useState(false);
 
+  // Directory-discovery searches run in the background; polling here keeps going while the admin works elsewhere.
   return (
+    <DiscoveryRunsProvider>
     <div className="app-shell flex">
       <Sidebar mobileOpen={navOpen} onClose={() => setNavOpen(false)} />
 
@@ -23,5 +26,6 @@ export function AdminLayout() {
         </main>
       </div>
     </div>
+    </DiscoveryRunsProvider>
   );
 }

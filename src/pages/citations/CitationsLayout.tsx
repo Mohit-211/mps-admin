@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { Notice } from "../../components/ui/Panel";
+import { DiscoveryRunChips } from "./DiscoveryRuns";
 
 const SECTIONS = [
   { to: "/citations/locations", label: "Locations" },
@@ -49,6 +50,7 @@ export function CitationsLayout() {
           </Notice>
         </div>
       )}
+      <DiscoveryRunChips />
       <Outlet />
     </div>
   );

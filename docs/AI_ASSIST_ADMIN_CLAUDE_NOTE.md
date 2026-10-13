@@ -10,6 +10,16 @@ Mohit's rule: **nothing is added automatically.** Every suggestion lands in a re
 
 **Permissions:** listing needs `citations.view`. Discover, accept and dismiss need `citations.manage`.
 
+## 0. Change (2026-10-13): discovery runs in the background, so poll it
+
+The first live search failed with a CORS error. A Perplexity search can take more than a minute, and Cloudflare cuts requests at about 100 seconds. It then answers with its own error page, which has no CORS header. The backend now runs the search as a background job:
+1. **Start:** `POST /admin/citations/directory-suggestions/discover` (same body) answers **202** at once: `{ run_id, status: "queued", created: [] }`. Validation, key and budget errors still answer at once.
+2. **Poll:** `GET /admin/citations/directory-suggestions/discover/:runId` every 3–5 seconds while `status` is `queued` or `running`. Show "Searching the web… this can take a minute or two", and let the admin close the dialog: the search keeps running. If they do, show a small "Search running" chip they can reopen from the list.
+3. **`done`:** show `created` (the new suggestions) and "N new (M skipped)", then refresh the Suggested list.
+4. **`failed`:** show `error.message`. `error.code` is `perplexity_failed`, `perplexity_budget_reached`, `perplexity_not_configured` or `timed_out`.
+
+Sections 1–2 below otherwise still apply. Where they describe the old instant answer, read it as the finished run.
+
 ## 1. "Discover directories" (a panel on the Directories screen and on a location's citation list)
 
 **Three kinds of search** (`POST /admin/citations/directory-suggestions/discover`):
