@@ -12,7 +12,6 @@ export type Permission =
   | "support.manage"
   | "citations.view"
   | "citations.manage"
-  | "content.manage"
   | "audits.run"
   | "leads.read"
   | "leads.manage"
@@ -61,7 +60,6 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "support.manage": "Support (reply)",
   "citations.view": "Citations (view)",
   "citations.manage": "Citations (edit)",
-  "content.manage": "Blog & FAQ",
   "audits.run": "Sales audit",
   "leads.read": "Free-audit leads (view)",
   "leads.manage": "Free-audit leads (delete)",

@@ -1,6 +1,6 @@
 # Endpoints
 
-**The single source of truth for every current endpoint** (method, path, auth, purpose, phase added, status). Request and response examples for the rebuilt endpoints are in [API.md](API.md). [ROUTES.md](ROUTES.md) is a frozen Phase 1 snapshot (with the audit findings) and is no longer updated.
+**The single source of truth for every current endpoint** (method, path, auth, purpose, phase added, status). Request and response examples for the rebuilt endpoints are in [API.md](API.md). [ROUTES.md](archive/ROUTES.md) is a frozen Phase 1 snapshot (with the audit findings) and is no longer updated.
 
 **Rule (Mohit, 2026-09-26):**
 - Every commit that adds, changes or removes an endpoint updates this file in the **same commit**, and [API.md](API.md) too when a request or response shape changes.
@@ -23,7 +23,7 @@
 **Postman:** `docs/postman/MyPageSEO.postman_collection.json` + `MyPageSEO.local.postman_environment.json`, generated from this catalogue by `npm run postman:generate` (rerun after changing the catalogue).
 
 **Auth:**
-- `admin` (Phase 10): header `Authorization: Bearer <admin session token>` from `POST /admin/auth/login` (HS256, `ADMIN_JWT_SECRET`, 12 h). `admin (\`<permission>\`)` also needs that permission: `admins.manage` (super admin), `platform.read` / `platform.write` (super admin, admin), `content.manage` (super admin, admin, editor), `citations.view` and `citations.manage` (Phase 16; super admin, admin, editor), `billing.read` and `billing.manage` (Phase 13a; super admin, admin), `support.read` and `support.manage` (Phase 13b; super admin, admin, editor), `audits.run` (Phase 19; super admin, admin, sales representative), `leads.read` (Phase 20; super admin, admin, sales representative) and `leads.manage` (Phase 20; super admin, admin). No token or an invalid one → **401**; a missing permission → **403** `{ reason: "forbidden", permission }`.
+- `admin` (Phase 10): header `Authorization: Bearer <admin session token>` from `POST /admin/auth/login` (HS256, `ADMIN_JWT_SECRET`, 12 h). `admin (\`<permission>\`)` also needs that permission: `admins.manage` (super admin), `platform.read` / `platform.write` (super admin, admin), `citations.view` and `citations.manage` (Phase 16; super admin, admin, editor), `billing.read` and `billing.manage` (Phase 13a; super admin, admin), `support.read` and `support.manage` (Phase 13b; super admin, admin, editor), `audits.run` (Phase 19; super admin, admin, sales representative), `leads.read` (Phase 20; super admin, admin, sales representative), `leads.manage` (Phase 20; super admin, admin) and `settings.master` (Phase 24; super admin only). No token or an invalid one → **401**; a missing permission → **403** `{ reason: "forbidden", permission }`.
 - `user`: header `Authorization: Bearer <access token>`. A missing or invalid token gives **401**.
 - `owner` (location routes, Phase 8): the caller must be an active member of the location's **organization** (a `client_user` only for its clients' locations). Otherwise **404**; a malformed id gives **400**. Writes (anything but GET) need the role owner or member: a `client_user` gets **403** `{ reason: "read_only" }`.
 - `org`: the route acts in the current organization: the `X-Organization-Id` header (one of the caller's organizations, else **403** `not_a_member`), otherwise the user's default organization. A user without an organization gets **403** `{ reason: "no_organization" }`.
@@ -67,11 +67,19 @@ Reads, billing, support and GBP connect / bind stay open.
 - `POST /reports`
 - the white-label branding writes
 
-## Summary (2026-10-12)
+## Summary (2026-10-15)
 
-**316 endpoints:** 315 live, 1 dev-only.
-- **By origin:** 284 rebuilt or new, 32 legacy.
-- **By auth:** 151 user, 121 platform admin (each with a permission), 44 none.
+**305 endpoints:** 304 live, 1 dev-only. (Unchanged through 9b.3 and 9b.4, 2026-10-15; Phase 23 added 12, Phase 24 added 7.)
+- **By origin:** 303 rebuilt or new, 2 legacy (the health checks `/api/healthcheck` and `/ping`; Phase 14 picks one for monitoring).
+- **By auth:** 159 user, 113 platform admin (each with a permission), 33 none.
+
+**Phase 24 (master settings, 2026-10-16):** `/admin/master-settings*` (#244–#250), super admin only (`settings.master`); every save is confirmed with a code emailed to `MASTER_SETTINGS_OTP_EMAIL`.
+
+**Client page (2026-10-16):** the page behind a white-label link is now the frontend's React bundle; it reads `GET /w/:token/data` (#242) and `GET /w/:token/logo` (#243). The server-rendered `/w/:token` (#240) stays as the fallback.
+
+**Phase 23 (white-label client links, 2026-10-15):** `/white-label-links` (#233) and `/locations/:locationId/white-label-link*` (#234–#239; the logo GET has no detail row, like the branding logo); the public client page `/w/:token` and its PDFs (#240–#241), served at `/:token` on a white-label host (`WHITE_LABEL_HOSTS`), which serves nothing else; `PUT /organization/branding` takes `website_url`.
+
+**9b.2 legacy removal (2026-10-13):** the 28 legacy content and reference routes are deleted: `/countries*` (3), `/languages`, `/timezones`, the legacy `/business-categories` (3; the admin panel uses `/admin/citations/business-categories`), `/faqs*` (4), `/contact-us*` (5), `/blog*` (6) and `/blog-category*` (5). Nothing called them: the marketing site serves its blog and contact form from its own backend (node.mypageseo.com). The `content.manage` permission went with them. **Page sizes (9b.2 step 4):** a global legacy middleware used to inject `limit=15` into every request, so lists ignored their documented defaults; now each list uses the default given in its row (e.g. locations, clients, dashboard, reviews, posts, leads 25; reports and admin lists 20; post photos and citation lists 50; keyword history 12; rank runs 15). No route or shape changed. The blog's upload routes `/images/:filename` and `/videos/:filename` followed (the static `public/` folder and the disk uploads are gone; post photos keep their own memory upload).
 
 **Phase 22 (AI assist, 2026-10-13):** `POST /locations/:locationId/keywords/suggest` (#226, free AI keyword suggestions), `POST /locations/:locationId/posts/ai-topics` (#227); admin directory discovery `/admin/citations/directory-suggestions*` (#228–#231). `POST …/posts/ai-draft` takes `keywords` and `avoid`; review reply drafts follow new rules (no shape change).
 
@@ -91,7 +99,7 @@ Reads, billing, support and GBP connect / bind stay open.
 
 **Phase 20 (free audit on the marketing site):** 7 public `/public/audits` routes (#178–#184; no login, Cloudflare Turnstile on start and lead, the audit's `X-Audit-Token` on every call about it) and 5 `/admin/leads/audits` routes (#185–#189, `leads.read` / `leads.manage`).
 
-**Admin panel additions (2026-10-05):** `POST /admin/users`, `DELETE /admin/users/:userId`, `GET /admin/reports`, `GET /admin/reports/:reportId`, `GET /admin/reports/:reportId/pdf`; user-list filters `type` / `role` / `organization_id`; the limit override `free_locations`. Later the same day (frontend requests): `POST /admin/admins/:adminId/password` (and an optional `password` on `POST /admin/admins`), `PATCH /admin/users/:userId`, `GET /admin/organizations/:organizationId/clients`, `DELETE /admin/organizations/:organizationId/members/:userId`. Reference for the admin frontend: [ADMIN_PANEL.md](ADMIN_PANEL.md).
+**Admin panel additions (2026-10-05):** `POST /admin/users`, `DELETE /admin/users/:userId`, `GET /admin/reports`, `GET /admin/reports/:reportId`, `GET /admin/reports/:reportId/pdf`; user-list filters `type` / `role` / `organization_id`; the limit override `free_locations`. Later the same day (frontend requests): `POST /admin/admins/:adminId/password` (and an optional `password` on `POST /admin/admins`), `PATCH /admin/users/:userId`, `GET /admin/organizations/:organizationId/clients`, `DELETE /admin/organizations/:organizationId/members/:userId`. Reference for the admin frontend: [apps/ADMIN_PANEL.md](apps/ADMIN_PANEL.md).
 
 **Phase 19 (sales audit):** 6 `/staff/audits` routes (#172–#177) for the staff dashboard, permission `audits.run` (the sales representative role, plus super admin and admin).
 
@@ -101,7 +109,7 @@ This block is recounted with every commit that changes the catalogue.
 
 **Phase 13a (billing):** the 15 legacy plan / guest-checkout / coupon / payment-list / Square routes were retired. It added 14 `/billing` routes and the public `/pricing` (#107–#121), and 30 `/admin/billing/*` routes (#122–#151; the 2 legacy-payment links #149–#150 were removed in 13b); the PayPal webhook kept its path with new handlers.
 
-**Phase 13b step 1 (legacy removal):** 40 legacy routes deleted (no deprecated routes remain; the status no longer exists), the read-only `GET /admin/roles` added. Details in [LEGACY_FEATURES.md](LEGACY_FEATURES.md) "Removed in Phase 13b".
+**Phase 13b step 1 (legacy removal):** 40 legacy routes deleted (no deprecated routes remain; the status no longer exists), the read-only `GET /admin/roles` added. Details in [PROGRESS.md "Removed legacy features"](PROGRESS.md#removed-legacy-features-reference-for-rebuilding) "Removed in Phase 13b".
 
 **Phase 13b step 2:** sessions and the account moved to `/auth/*` (6 routes: refresh, logout, change-password, me GET/PATCH, deactivate); the legacy `/user/auth` session routes and `/user/profile` were deleted. The Google connect routes then moved to `/gbp/connect/*` + `POST /gbp/disconnect`, and `POST /gbp/bind-with-user` became `POST /gbp/bind`, so no `/user/*` route remains.
 
@@ -111,7 +119,7 @@ This block is recounted with every commit that changes the catalogue.
 
 ## Catalogue: all current endpoints
 
-Paths are full paths. Auth: `none`, `user` (user access token), `user + org` (acts in the current organization), `user + owner` (member of the location's organization, otherwise 404), `refresh token`, `admin`. The security findings for legacy routes (S1–S30) are in [AUDIT.md](AUDIT.md) and the [ROUTES.md](ROUTES.md) snapshot.
+Paths are full paths. Auth: `none`, `user` (user access token), `user + org` (acts in the current organization), `user + owner` (member of the location's organization, otherwise 404), `refresh token`, `admin`. The security findings for legacy routes (S1–S30) are in [AUDIT.md](AUDIT.md) and the [ROUTES.md](archive/ROUTES.md) snapshot.
 
 ### Admin
 
@@ -176,7 +184,7 @@ Paths are full paths. Auth: `none`, `user` (user access token), `user + org` (ac
 | GET | `/api/v1/organization/invitations` | user + org (owner) | Invitations with status (`pending`, `accepted`, `revoked`, `expired`) | 11 | live |
 | DELETE | `/api/v1/organization/invitations/:invitationId` | user + org (owner) | Revoke a pending invitation | 11 | live |
 | GET | `/api/v1/organization/branding` | user + org | Report branding with defaults filled (`white_label` false for a business) | 12 | live |
-| PUT | `/api/v1/organization/branding` | user + org (owner, agency) | White-label: agency name, colours, footer/contact text, hide MyPageSEO, email sender name and reply-to | 12 | live |
+| PUT | `/api/v1/organization/branding` | user + org (owner, agency) | White-label settings: agency name, website URL (23), colours, footer/contact text, hide MyPageSEO, email sender name and reply-to | 12 | live |
 | GET | `/api/v1/organization/branding/logo` | user + org | The logo image (private storage) | 12 | live |
 | PUT | `/api/v1/organization/branding/logo` | user + org (owner, agency) | Upload the logo `{ data }` (base64 PNG/JPEG, ≤ 512 KB) | 12 | live |
 | DELETE | `/api/v1/organization/branding/logo` | user + org (owner, agency) | Remove the logo | 12 | live |
@@ -207,6 +215,25 @@ Paths are full paths. Auth: `none`, `user` (user access token), `user + org` (ac
 | DELETE | `/api/v1/report-schedules/:scheduleId` | user + org (owner/member) | Delete a schedule | 12 | live |
 | GET | `/r/:token` | none (share token) | Public branded HTML view of a shared report; noindex, rate-limited, no internal ids | 12 | live |
 | GET | `/r/:token/pdf` | none (share token) | Public PDF download of a shared report | 12 | live |
+
+### White-label client links (Phase 23)
+
+Agency organizations whose plan includes `white_label`; owner and members (a member limited to clients only for their locations); a `client_user` gets **403** `read_only`, a business organization **403** `agency_only`. Changes need billing (**402** / **403** `organization_suspended` when read-only).
+
+| Method | Path | Auth | Purpose | Phase | Status |
+|---|---|---|---|---|---|
+| GET | `/api/v1/white-label-links` | user + org (owner/member, agency) | The organization's active links, paged | 23 | live |
+| GET | `/api/v1/locations/:locationId/white-label-link` | user, owner (owner/member, agency) | The location's link (or `null`), each report type's availability, the editions | 23 | live |
+| PUT | `/api/v1/locations/:locationId/white-label-link` | user, owner (write, agency) | Create the link (and its first edition) or update its reports and branding override | 23 | live |
+| POST | `/api/v1/locations/:locationId/white-label-link/rotate` | user, owner (write, agency) | Replace the URL; the old one stops working | 23 | live |
+| DELETE | `/api/v1/locations/:locationId/white-label-link` | user, owner (write, agency) | Turn the link off (editions kept) | 23 | live |
+| GET | `/api/v1/locations/:locationId/white-label-link/logo` | user, owner (owner/member, agency) | The link's override logo (private) | 23 | live |
+| PUT | `/api/v1/locations/:locationId/white-label-link/logo` | user, owner (write, agency) | Upload the override logo `{ data }` (base64 PNG/JPEG, ≤ 512 KB) | 23 | live |
+| DELETE | `/api/v1/locations/:locationId/white-label-link/logo` | user, owner (write, agency) | Remove the override logo | 23 | live |
+| GET | `/w/:token` | none (link token) | Public client page: the agency's branding, the selected reports of the newest edition (`?e=<key>` for an older one); noindex, rate-limited, no MyPageSEO. On a white-label host it is served at `/:token` | 23 | live |
+| GET | `/w/:token/pdf/:type` | none (link token) | Public PDF of one report on the page (`?e=<key>`); at `/:token/pdf/:type` on a white-label host | 23 | live |
+| GET | `/w/:token/data` | none (link token) | The client page's JSON (2026-10-16: the page is the frontend's bundle): live branding, edition and editions, selected reports with data and their section data, attribution (`?e=<key>`); at `/:token/data` on a white-label host | 23 | live |
+| GET | `/w/:token/logo` | none (link token) | The logo the client page shows (the link's override, else the settings' logo); at `/:token/logo` on a white-label host | 23 | live |
 
 ### Clients (agency)
 
@@ -404,7 +431,7 @@ Read: owner and member (`client_user` → 403 `read_only`); payments and changes
 | GET | `/api/v1/billing/invoices` | user + org | Invoices (paginated) | 13a | live |
 | GET | `/api/v1/billing/invoices/:invoiceId/pdf` | user + org | Invoice PDF | 13a | live |
 | GET | `/api/v1/pricing` | none | Public pricing for the marketing site (`?country=US\|CA`): first / additional location price, 20-location cap, trial, token packs | 13a | live |
-| POST | `/api/v1/subscription/paypal/webhook` | none (PayPal signature, verified with PayPal) | PayPal webhook: subscription, sale and order/capture events (idempotent per event id; 500 on a handler error so PayPal retries). Refused (400 `invalid_signature`) unless PayPal confirms it (`PAYPAL_WEBHOOK_ID`) | legacy, rebuilt 13a | live |
+| POST | `/api/v1/subscription/paypal/webhook` | none (PayPal signature, verified with PayPal) | PayPal webhook: subscription, sale and order/capture events (idempotent per event id; 500 on a handler error so PayPal retries). Refused (400 `invalid_signature`) unless PayPal confirms it (the current mode's `PAYPAL_<MODE>_WEBHOOK_ID`) | legacy, rebuilt 13a | live |
 
 ### Billing admin (Phase 13a)
 
@@ -475,6 +502,20 @@ Platform admins: overview, users, organizations and reports need `platform.read`
 | POST | `/api/v1/admin/support/tickets/:ticketId/messages` | admin (`support.manage`) | Reply to the customer, or an internal note (`internal: true`); the first reply assigns the ticket | 13b | live |
 | PATCH | `/api/v1/admin/support/tickets/:ticketId` | admin (`support.manage`) | Status, priority, assignee (2026-10-11: the assignee needs `support.manage`, else 400 `not_support_staff`) | 13b | live |
 
+### Master settings (Phase 24)
+
+Super admin only (`settings.master`). A save emails a 6-digit code to `MASTER_SETTINGS_OTP_EMAIL` (`.env`); nothing changes until it is confirmed. Shapes: [API.md](API.md#master-settings-phase-24).
+
+| Method | Path | Auth | Purpose | Phase | Status |
+|---|---|---|---|---|---|
+| GET | `/api/v1/admin/master-settings` | admin (`settings.master`) | Every setting by section (value, default, overridden, limits, warnings; secrets as `{ set }`), the PayPal mode and keys present, the pending change | 24 | live |
+| POST | `/api/v1/admin/master-settings/changes` | admin (`settings.master`) | Propose changes: validated, checked (SMTP connection, PayPal switch), then a code is emailed | 24 | live |
+| POST | `/api/v1/admin/master-settings/changes/:changeId/confirm` | admin (`settings.master`) | Apply the change with the emailed code | 24 | live |
+| POST | `/api/v1/admin/master-settings/changes/:changeId/resend` | admin (`settings.master`) | Email a new code (once a minute) | 24 | live |
+| DELETE | `/api/v1/admin/master-settings/changes/:changeId` | admin (`settings.master`) | Cancel the pending change | 24 | live |
+| POST | `/api/v1/admin/master-settings/reset` | admin (`settings.master`) | Propose settings back to their `.env` defaults (same code flow) | 24 | live |
+| POST | `/api/v1/admin/master-settings/paypal/check` | admin (`settings.master`) | Dry-run of the PayPal mode switch checks (no code, no change) | 24 | live |
+
 ### Support tickets (Phase 13b)
 
 Every organization role may open and follow tickets; a client_user sees only its own. Shapes: [API.md](API.md#support-tickets-phase-13b).
@@ -502,7 +543,7 @@ The staff dashboard's free audit: one business, one keyword, public data only (P
 
 ### Free audit, marketing site (Phase 20)
 
-The public tool on mypageseo.com (the page calls api.mypageseo.com). No login: start and lead need a Cloudflare Turnstile token (`turnstile_token`), and every call about an audit needs its `X-Audit-Token` (returned once by the start). A preview first (free), the full report after the lead's email is verified. Shapes: [API.md](API.md#free-audit-marketing-site-phase-20); handoff: [MARKETING_CLAUDE_NOTE.md](MARKETING_CLAUDE_NOTE.md).
+The public tool on mypageseo.com (the page calls api.mypageseo.com). No login: start and lead need a Cloudflare Turnstile token (`turnstile_token`), and every call about an audit needs its `X-Audit-Token` (returned once by the start). A preview first (free), the full report after the lead's email is verified. Shapes: [API.md](API.md#free-audit-marketing-site-phase-20); handoff: [apps/MARKETING_SITE.md](apps/MARKETING_SITE.md).
 
 | Method | Path | Auth | Purpose | Phase | Status |
 |---|---|---|---|---|---|
@@ -524,57 +565,17 @@ The public tool on mypageseo.com (the page calls api.mypageseo.com). No login: s
 | GET | `/api/v1/admin/leads/audits/:leadId/pdf` | admin (`leads.read`) | Its PDF (verified and finished audits) | 20 | live |
 | DELETE | `/api/v1/admin/leads/audits/:leadId` | admin (`leads.manage`) | Delete a lead and its report (privacy requests); audit-logged | 20 | live |
 
-### Reference data
-
-| Method | Path | Auth | Purpose | Phase | Status |
-|---|---|---|---|---|---|
-| GET | `/api/v1/countries` | none | Get All Country | legacy | live |
-| GET | `/api/v1/countries/states/:countryId` | none | Get All State By Country Id | legacy | live |
-| GET | `/api/v1/countries/cities/:stateId` | none | Get All City By State Id | legacy | live |
-| GET | `/api/v1/languages` | none | Get All Language | legacy | live |
-| GET | `/api/v1/timezones` | none | Get All Timezone | legacy | live |
-| POST | `/api/v1/business-categories` | admin (`content.manage`) | Create Business Category | legacy, changed 10 | live |
-| GET | `/api/v1/business-categories` | none | Get All Business Category | legacy | live |
-| PUT | `/api/v1/business-categories/:businessCategoryId` | admin (`content.manage`) | Update Business Category | legacy, changed 10 | live |
-
-### Content & support
-
-| Method | Path | Auth | Purpose | Phase | Status |
-|---|---|---|---|---|---|
-| GET | `/api/v1/faqs` | none | Get All Faq | legacy | live |
-| POST | `/api/v1/faqs` | admin (`content.manage`) | Create Faq | legacy, changed 10 | live |
-| PUT | `/api/v1/faqs/:faqId` | admin (`content.manage`) | Update Faq | legacy, changed 10 | live |
-| DELETE | `/api/v1/faqs/:faqId` | admin (`content.manage`) | Delete Faq | legacy, changed 10 | live |
-| POST | `/api/v1/contact-us` | none | Create Contact Us | legacy | live |
-| GET | `/api/v1/contact-us/get` | admin (`platform.read`) | Get All Contact Us | legacy, changed 10 | live |
-| GET | `/api/v1/contact-us/:contactId` | admin (`platform.read`) | Get Contact Us By Id | legacy, changed 10 | live |
-| PUT | `/api/v1/contact-us/:contactId/status` | admin (`platform.write`) | Update Contact Us Status | legacy, changed 10 | live |
-| DELETE | `/api/v1/contact-us/:contactId` | admin (`platform.write`) | Delete Contact Us | legacy, changed 10 | live |
-| POST | `/api/v1/blog` | admin (`content.manage`) | Create Blog | legacy, changed 10 | live |
-| GET | `/api/v1/blog/get` | none | Get All Blogs | legacy | live |
-| GET | `/api/v1/blog/slug/:slug` | none | Get Blog By Slug | legacy | live |
-| GET | `/api/v1/blog/:blogId` | none | Get Blog By Id | legacy | live |
-| PUT | `/api/v1/blog/:blogId` | admin (`content.manage`) | Update Blog | legacy, changed 10 | live |
-| DELETE | `/api/v1/blog/:blogId` | admin (`content.manage`) | Delete Blog | legacy, changed 10 | live |
-| POST | `/api/v1/blog-category` | admin (`content.manage`) | Create Blog Category | legacy, changed 10 | live |
-| GET | `/api/v1/blog-category/get` | none | Get All Blog Categories | legacy | live |
-| GET | `/api/v1/blog-category/:categoryId` | none | Get Blog Category By Id | legacy | live |
-| PUT | `/api/v1/blog-category/:categoryId` | admin (`content.manage`) | Update Blog Category | legacy, changed 10 | live |
-| DELETE | `/api/v1/blog-category/:categoryId` | admin (`content.manage`) | Delete Blog Category | legacy, changed 10 | live |
-
 ### System & infrastructure
 
 | Method | Path | Auth | Purpose | Phase | Status |
 |---|---|---|---|---|---|
-| GET | `/images/:filename` | none | Serve an uploaded file (`public/uploads/images`) | legacy | live |
-| GET | `/videos/:filename` | none | Serve an uploaded file (`public/uploads/videos`) | legacy | live |
 | GET | `/api/healthcheck` | none | Health check | legacy | live |
 | GET | `/ping` | none | Ping | legacy | live |
 ### Development only
 
 | Method | Path | Auth | Purpose | Phase | Status |
 |---|---|---|---|---|---|
-| GET | `/dev/gbp-connect` | none (the page asks for a MyPageSEO token) | Test page for the Google popup connect (GIS code client) without the real frontend; calls #11 and #12, then optionally #18. See [GBP_CONNECT.md](GBP_CONNECT.md) §3a | after 7b | dev only |
+| GET | `/dev/gbp-connect` | none (the page asks for a MyPageSEO token) | Test page for the Google popup connect (GIS code client) without the real frontend; calls #11 and #12, then optionally #18. See [the GBP connect runbook](OPERATIONS.md#connecting-google-business-profile-runbook) §3a | after 7b | dev only |
 
 ---
 
@@ -772,8 +773,8 @@ A report freezes stored data (rank runs, the GBP report, the profile snapshot) a
 | 72 | GET | `/report-schedules/:scheduleId` | user + org | – | `{ schedule_id, scope, location_id, client_id, type, sections, range, recipients, frequency, status, locations, next_expected, last_sent_at, last_error, last_report_id, created_at }` |
 | 73 | PATCH | `/report-schedules/:scheduleId` | user + org (owner/member) | `{ type?, sections?, range?, recipients?, status?: active\|paused }` | schedule view |
 | 74 | DELETE | `/report-schedules/:scheduleId` | user + org (owner/member) | – | `{ deleted, schedule_id }` |
-| 75 | GET | `/organization/branding` | user + org | – | `{ white_label, name, agency_name, primary_color, secondary_color, footer_text, contact_text, hide_mypageseo, email_sender_name, email_reply_to, logo: { mime, bytes, url } \| null, updated_at }` |
-| 76 | PUT | `/organization/branding` | user + org (owner, agency) | any of `agency_name, primary_color (#rrggbb), secondary_color, footer_text, contact_text, hide_mypageseo, email_sender_name, email_reply_to` (`""` clears) | as #75; **403** `agency_only` / `owner_only` |
+| 75 | GET | `/organization/branding` | user + org | – | `{ white_label, name, agency_name, website_url, primary_color, secondary_color, footer_text, contact_text, hide_mypageseo, email_sender_name, email_reply_to, logo: { mime, bytes, url } \| null, updated_at }` |
+| 76 | PUT | `/organization/branding` | user + org (owner, agency) | any of `agency_name, website_url (http/https, ≤ 300; Phase 23), primary_color (#rrggbb), secondary_color, footer_text, contact_text, hide_mypageseo, email_sender_name, email_reply_to` (`""` clears) | as #75; **403** `agency_only` / `owner_only` |
 | 77 | GET | `/organization/branding/logo` | user + org | – | the image; **404** without a logo |
 | 78 | PUT | `/organization/branding/logo` | user + org (owner, agency) | `{ data: "data:image/png;base64,…" }` | as #75; **400** `logo_type`, `logo_too_large` |
 | 79 | DELETE | `/organization/branding/logo` | user + org (owner, agency) | – | as #75 |
@@ -983,13 +984,52 @@ Money is in the organization's currency (US → USD, CA → CAD). Errors carry `
 | 231 | POST | `/admin/citations/directory-suggestions/:suggestionId/dismiss` | admin (`citations.manage`) | `{ note? }` | suggestion (`dismissed`); **409** `already_decided` |
 | 232 | GET | `/admin/citations/directory-suggestions/discover/:runId` | admin (`citations.view`) | – | `{ run_id, status: queued\|running\|done\|failed, input, created: [suggestion], skipped_duplicates, sources, cost_usd, error: { code, message } \| null, created_by, created_at, started_at, finished_at }`; failed codes: `perplexity_failed`, `perplexity_budget_reached`, `perplexity_not_configured`, `timed_out` (10 min), …; **404** |
 
+### White-label client links (Phase 23)
+
+`link` = `{ url, reports: [type], branding_override: { name, website_url, primary_color, secondary_color, logo: { mime, bytes, url } \| null } \| null, views, last_viewed_at, created_at, rotated_at }`. Types: `rank_tracker`, `gbp_audit`, `competitor_analysis`, `citation`, `reputation`. Shapes: [API.md](API.md) "White-label client links (Phase 23)".
+
+| # | Method | Path | Auth | Request | Response |
+|---|---|---|---|---|---|
+| 233 | GET | `/white-label-links` | user, org (owner/member, agency) | query `page`, `limit` (25, ≤ 100) | `{ results: [{ location: { id, name, city, state, client_id }, url, reports, branding_override: bool, views, last_viewed_at, last_edition_at, created_at }], page, limit, total }` |
+| 234 | GET | `/locations/:locationId/white-label-link` | user, owner (owner/member, agency) | – | `{ link \| null, types: [{ type, selected, available: bool \| null, reason }], editions: [{ key, generated_at, trigger: link_created\|refresh }] }` (≤ 50, newest first; `available` is `null` before the first edition) |
+| 235 | PUT | `/locations/:locationId/white-label-link` | user, owner (write, agency) | `{ reports: [type] (≥ 1), branding_override?: { name? (≤ 150), website_url? (http/https, ≤ 300), primary_color?, secondary_color? (#rrggbb) } \| null }`; omitted override = keep, `null` = clear (logo too), `""` clears a field | as #234 |
+| 236 | POST | `/locations/:locationId/white-label-link/rotate` | user, owner (write, agency) | – | as #234 (new `url`); **404** `no_link` |
+| 237 | DELETE | `/locations/:locationId/white-label-link` | user, owner (write, agency) | – | `{ revoked: true }`; **404** `no_link` |
+| 238 | PUT | `/locations/:locationId/white-label-link/logo` | user, owner (write, agency) | `{ data: "data:image/png;base64,…" }` | as #234; **400** `logo_type`, `logo_too_large`; **404** `no_link` |
+| 239 | DELETE | `/locations/:locationId/white-label-link/logo` | user, owner (write, agency) | – | as #234; **404** `no_link` |
+
+
+### Master settings (Phase 24)
+
+Super admin only. Values are validated with the `.env` rules; secrets are write-only.
+
+| # | Method | Path | Auth | Request | Response |
+|---|---|---|---|---|---|
+| 244 | GET | `/admin/master-settings` | admin (`settings.master`) | – | `{ sections: [{ section, settings: [{ key, label, value, default, overridden, constraints: { type, allowed, min, max, integer }, warnings: [cost\|history], secret? }] }], paypal: { mode, keys: { sandbox, live } }, code_sent_to (masked), pending: change \| null }`; a secret's `value` / `default` is `{ set: bool }` |
+| 245 | POST | `/admin/master-settings/changes` | admin (`settings.master`) | `{ changes: { KEY: value \| null } }` (null = back to the `.env` default) | **202** `{ change_id, status: pending, expires_at, attempts_left, changes: [{ key, label, section, old, new, reset, warnings }], code_sent_to, sent_via: current_settings\|new_smtp_settings, paypal }`; **400** `unknown_setting`, `invalid_settings` (`errors: [{ key, message }]`), `no_changes`, `smtp_check_failed`; **409** `paypal_switch_blocked` / `paypal_check_failed` (`paypal: { checks, blocking }`); **429** `rate_limited` (10 codes / hour); **502** `code_not_sent`; **503** `otp_email_not_configured` |
+| 246 | POST | `/admin/master-settings/changes/:changeId/confirm` | admin (`settings.master`) | `{ code: "123456" }` | `{ applied: change, version, paypal }`; **400** `invalid_code` (`attempts_left`); **410** `expired` (10 minutes); **429** `too_many_attempts` (5); **404** `change_not_found`; the checks run again (**400** / **409** as #245) |
+| 247 | POST | `/admin/master-settings/changes/:changeId/resend` | admin (`settings.master`) | – | change + `code_sent_to` (a new code); **429** `resend_too_soon` (`retry_after_seconds`) |
+| 248 | DELETE | `/admin/master-settings/changes/:changeId` | admin (`settings.master`) | – | `{ cancelled: true, change_id }` |
+| 249 | POST | `/admin/master-settings/reset` | admin (`settings.master`) | `{ keys: [KEY] }` | as #245 |
+| 250 | POST | `/admin/master-settings/paypal/check` | admin (`settings.master`) | `{ mode: sandbox\|live }` | `{ mode, from, ok, checks: [{ name: subscriptions\|orders\|keys\|token\|product\|plan_USD\|plan_CAD, ok, detail }], blocking: { subscriptions, orders } }` (real PayPal calls: 1 token + 3 reads) |
+Public client pages (outside `/api/v1`, no login; at `/:token…` on a white-label host):
+
+| # | Method | Public path | Auth | Returns |
+|---|---|---|---|---|
+| 240 | GET | `/w/:token` | link token | query `e` (an edition key `yyyyLLdd-HHmm`; default the newest). HTML (no scripts, CSP `default-src 'none'`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, no internal ids, no MyPageSEO); the same **404** page for an unknown, rotated or revoked link, a removed location, an organization that isn't an agency, lacks `white_label` or is inactive / suspended, or an unknown edition; **429** above 60 requests / minute per IP. Production with `WHITE_LABEL_BASE_URL` set: **404** here, served on the white-label host at `/:token` |
+| 241 | GET | `/w/:token/pdf/:type` | link token | `type` one of the link's reports with data; query `e`. `application/pdf` attachment (`<location>-<type>-<date>.pdf`); **404** page otherwise; views are counted on #240 only |
+| 242 | GET | `/w/:token/data` | link token | query `e` (edition key). `{ branding: { name, website_url, contact_text, footer_text, primary_color, secondary_color, logo_url: "./<token>/logo" \| null }, location: { name, address, city, state, country }, edition: { key, generated_at }, latest_key, editions: [{ key, generated_at }] (≤ 50, newest first), reports: [type] (selected and with data, in display order), data: { <type>: section data as stored }, attribution: string \| null }`; no internal ids; `Cache-Control: no-store`, noindex. Counts a view. **404** `{ error: "not_available" }` for the same failures as #240; **429** `{ error: "rate_limited" }` (60 / minute / IP, shared with #240–#243) |
+| 243 | GET | `/w/:token/logo` | link token | The image (`image/png` or `image/jpeg`), `Cache-Control: private, max-age=300`; **404** page without a logo or for the same failures as #240. Not a view |
+
 ## Removed endpoints
+
+Removed in 9b.2 (2026-10-13; nothing called them; the marketing site serves its blog and contact form from node.mypageseo.com): `GET /countries`, `GET /countries/states/:countryId`, `GET /countries/cities/:stateId`, `GET /languages`, `GET /timezones`, `POST/GET /business-categories`, `PUT /business-categories/:businessCategoryId`, `GET/POST /faqs`, `PUT/DELETE /faqs/:faqId`, `POST /contact-us`, `GET /contact-us/get`, `GET /contact-us/:contactId`, `PUT /contact-us/:contactId/status`, `DELETE /contact-us/:contactId`, `POST /blog`, `GET /blog/get`, `GET /blog/slug/:slug`, `GET/PUT/DELETE /blog/:blogId`, `POST /blog-category`, `GET /blog-category/get`, `GET/PUT/DELETE /blog-category/:categoryId` (all under `/api/v1`), and the file routes `GET /images/:filename` and `GET /videos/:filename`. See [PROGRESS.md "Removed legacy features"](PROGRESS.md#removed-legacy-features-reference-for-rebuilding) "Removed in 9b.2".
 
 Removed in Phase 8: `GET /locations/google-locations/:name` and `GET /locations/google-locations/details/:placeId` (unauthenticated proxies to the old paid Places API; use `GET /places/search`), and `PUT /locations` (now `PATCH /locations/:locationId`).
 
 Removed in Phase 13a: the legacy plan CRUD (`POST/GET /subscription`, `PUT/DELETE /subscription/:plan_id`), `GET /subscription/plans/country/:country` (→ `GET /pricing`), the guest checkout (`POST /subscription/create-subscription`, `GET /subscription/payment-status`), the prefix coupons (`POST /subscription/coupon/generate`, `POST /subscription/coupon/validate`, `GET /subscription/coupons`), `GET /subscription/payments/all`, `POST /subscription/send-subscription-welcome-mail`, and the Square citation-credit routes (`POST /payments/process-payment`, `GET /payments/plans/list`, `GET /payments/getAllPayments`). Replaced by `/billing`, `/pricing` and the billing admin (Phase 13a D5).
 
-Removed in Phase 16: the 13 legacy `/api/v1/citation/*` routes (manual pricings, aggregators, remove prices, `lists/:location_id`, campaign add / business info / details / all, `locations/campaigns/list/all`, tracker GET / POST, builder, `getAllCitatioList`). They were a paid citation-campaign ordering flow with a SerpAPI "tracker" returning sample data and a stub builder; replaced by the Phase 16 citation endpoints. See [plans/phase-16-citations.md](plans/phase-16-citations.md) §1.
+Removed in Phase 16: the 13 legacy `/api/v1/citation/*` routes (manual pricings, aggregators, remove prices, `lists/:location_id`, campaign add / business info / details / all, `locations/campaigns/list/all`, tracker GET / POST, builder, `getAllCitatioList`). They were a paid citation-campaign ordering flow with a SerpAPI "tracker" returning sample data and a stub builder; replaced by the Phase 16 citation endpoints. See [archive/PLANS.md, Phase 16](archive/PLANS.md#phase-16-citations-manual-admin-managed-tracking) §1.
 
 Removed on 2026-10-01: `GET /api/v1/gbp`, `POST /api/v1/gbp/bind`, `GET /api/v1/onboarding/gbp-profiles` and `POST /api/v1/onboarding/select-profile` (replaced by the connect, pick and bind flow, #14–#15a).
 
@@ -997,4 +1037,4 @@ Removed in Phase 8.1: `POST /api/v1/auth/verify-email/resend` (now `POST /api/v1
 
 Removed in Phase 9: the legacy posting routes `POST /api/v1/gbp/post/add`, `GET /api/v1/gbp/post/all/:location_id/:type` and `DELETE /api/v1/gbp/post/remove` (untyped, raw axios, whole documents in job data), replaced by `/locations/:locationId/posts*` (#191–#209). `POST /api/v1/gbp/unbind` stays, moved to the connect controller.
 
-Removed in the legacy cleanup (Phase 9a): the old ranking routes (`/rank-tracker`, `/local-search-grid`, `/local-map-ranking`), `/gbp-audit`, `/reputation-manager`, the white-label report links and the Search Console connect. See [LEGACY_FEATURES.md](LEGACY_FEATURES.md).
+Removed in the legacy cleanup (Phase 9a): the old ranking routes (`/rank-tracker`, `/local-search-grid`, `/local-map-ranking`), `/gbp-audit`, `/reputation-manager`, the white-label report links and the Search Console connect. See [PROGRESS.md "Removed legacy features"](PROGRESS.md#removed-legacy-features-reference-for-rebuilding).

@@ -1261,7 +1261,7 @@ One tracked keyword across the location's finished runs, oldest first, for the p
 
 ## GBP connection (Phase 6)
 
-Setup and a step-by-step local walkthrough are in [GBP_CONNECT.md](GBP_CONNECT.md). The examples below use the hand-written test fixtures (no live GBP calls have been made yet). All routes need a user token, except the OAuth callback, which Google calls.
+Setup and a step-by-step local walkthrough are in [the GBP connect runbook](OPERATIONS.md#connecting-google-business-profile-runbook). The examples below use the hand-written test fixtures (no live GBP calls have been made yet). All routes need a user token, except the OAuth callback, which Google calls.
 
 GBP errors use the same envelope:
 
@@ -1465,7 +1465,7 @@ Body: `{ "google_sub"?: "…" }`. It is required when several Google accounts ar
 
 ## Onboarding (Phase 7a)
 
-The first-run flow. The examples use test fixtures; no live calls have been made. The frontend walkthrough, including the Google Identity Services popup code, is in [GBP_CONNECT.md](GBP_CONNECT.md#3-connect-with-the-account-chooser-popup-phase-7a-recommended).
+The first-run flow. The examples use test fixtures; no live calls have been made. The frontend walkthrough, including the Google Identity Services popup code, is in [the GBP connect runbook](OPERATIONS.md#3-connect-with-the-account-chooser-popup-phase-7a-recommended).
 
 **Screens → endpoints:**
 
@@ -1847,7 +1847,7 @@ Examples below come from `npm run seed:demo-orgs` (offline demo data), trimmed.
 
 **No ranking data in the GBP report (version 2, Mohit, 2026-10-02).** Ranks are in the ranking pages and the Rank Tracker report only. The GBP Score, the Public Score, the competitor rows and the insights use no rank-run data (the latest map list only picks which nearby businesses to compare).
 
-**GBP Score (version 2):** 4 pillars, completeness 25, activity 20 (v4), reviews 25 (v4), **performance 30** (Google's own numbers: impressions trend 6, actions per 1,000 impressions 5, actions trend 5 points). Version 1 had visibility 20 (average map rank 8, top-3 rate 6, impressions trend 6) and engagement 10. Weights and thresholds in `src/gbp/scoring.config.ts`. A check without data is `not_available`; a pillar with no available check is excluded and the rest rescaled (`partial: true`). Grades: A ≥ 85, B ≥ 70, C ≥ 55, D ≥ 40, F.
+**GBP Score (version 2):** 4 pillars, completeness 25, activity 20 (v4), reviews 25 (v4), **performance 30** (Google's own numbers: impressions trend 6, actions per 1,000 impressions 5, actions trend 5 points). Version 1 had visibility 20 (average map rank 8, top-3 rate 6, impressions trend 6) and engagement 10. Weights and thresholds in `src/modules/gbpReport/domain/scoring.config.ts`. A check without data is `not_available`; a pillar with no available check is excluded and the rest rescaled (`partial: true`). Grades: A ≥ 85, B ≥ 70, C ≥ 55, D ≥ 40, F.
 - **`state`** per check: `pass` (full points), `partial` (some), `fail` (0), `not_available` (no data, not scored). Per pillar: `pass` / `fail` when every scored check is, `partial` when mixed, `not_available` when excluded; plus `counts`. `gbp_score.counts` sums all checks. Build "healthy" / "needs work" on these, not on `points`.
 - **`why_it_matters`** per check: one or two sentences for the detail drawer.
 - **v4 off** (`v4_enabled: false`): Activity and Reviews are excluded, so the score is **Completeness + Performance** (55 of the 100 weights, rescaled to 100), `partial: true`.
@@ -2405,7 +2405,7 @@ The URL (token) is returned **only here**; only its SHA-256 is stored. `GET /rep
 `GET` (any member):
 
 ```json
-{ "white_label": true, "name": "Northern Local SEO", "agency_name": "Northern Local SEO", "primary_color": "#0f766e", "secondary_color": "#b45309",
+{ "white_label": true, "name": "Northern Local SEO", "agency_name": "Northern Local SEO", "website_url": "https://northernlocalseo.example", "primary_color": "#0f766e", "secondary_color": "#b45309",
   "footer_text": "Northern Local SEO · Toronto, ON", "contact_text": "hello@northernlocalseo.example · (416) 555-0199", "hide_mypageseo": true,
   "email_sender_name": "Northern Local SEO", "email_reply_to": "hello@northernlocalseo.example",
   "logo": { "mime": "image/png", "bytes": 559, "url": "/api/v1/organization/branding/logo" }, "updated_at": "…" }
@@ -2413,8 +2413,77 @@ The URL (token) is returned **only here**; only its SHA-256 is stored. `GET /rep
 
 A business organization gets `{ "white_label": false, "name": "MyPageSEO", "primary_color": "#1d4ed8", "secondary_color": "#0f766e", "hide_mypageseo": false, … }`.
 
-- `PUT` (owner, agency): any of the fields above; colours `#rrggbb`; `""` clears a text field. **403** `agency_only` / `owner_only`.
+- `PUT` (owner, agency): any of the fields above; colours `#rrggbb`; `website_url` an `http(s)://` URL ≤ 300 characters (Phase 23: linked from the white-label client links); `""` clears a text field. **403** `agency_only` / `owner_only`.
 - `PUT /logo { "data": "data:image/png;base64,…" }`: PNG or JPEG (checked by content), ≤ 512 KB. **400** `logo_type`, `logo_too_large`. `GET /logo` returns the image (private, not a public URL); `DELETE /logo` removes it.
+
+## White-label client links (Phase 23)
+
+One link per location that an agency sends to its client. The page sits on a neutral domain (`WHITE_LABEL_BASE_URL`, not chosen yet; until then `<API origin>/w/<token>`) and shows the agency's branding and the selected reports, from the newest **edition**. A new edition is made when the link is created and after every monthly or manual refresh; older ones stay for 24 months and the client can pick them. Nothing on the page says MyPageSEO; the Google Maps attribution stays.
+
+**Who:** agency organizations whose plan includes `white_label`; owner and members (a member limited to clients only for their locations). A `client_user` gets **403** `read_only`, a business organization **403** `agency_only`, a plan without the feature **403** `feature_not_included`. Changes need billing (**402** `subscription_required` / **403** `organization_suspended`); reads keep working.
+
+**Branding:** the white-label settings (`PUT /organization/branding`: `agency_name`, `website_url`, logo, colours, footer and contact text), overridden per link by `branding_override` (name, website, colours, logo). An empty override field falls back to the settings. The branding is live: a change shows on the page at once, older editions included.
+
+`GET /locations/:locationId/white-label-link`:
+
+```json
+{
+  "link": {
+    "url": "https://googleprofile.example/3q2V8kXb0Jt1yLwZp9aR4A",
+    "reports": ["rank_tracker", "gbp_audit", "competitor_analysis"],
+    "branding_override": { "name": "Northern Local SEO for Maple Leaf", "website_url": null, "primary_color": null, "secondary_color": null,
+      "logo": { "mime": "image/png", "bytes": 559, "url": "/api/v1/locations/6ab7…/white-label-link/logo" } },
+    "views": 12, "last_viewed_at": "2026-10-14T15:02:11.000Z", "created_at": "2026-10-01T09:00:00.000Z", "rotated_at": null
+  },
+  "types": [
+    { "type": "rank_tracker", "selected": true, "available": true, "reason": null },
+    { "type": "gbp_audit", "selected": true, "available": true, "reason": null },
+    { "type": "competitor_analysis", "selected": true, "available": true, "reason": null },
+    { "type": "citation", "selected": false, "available": false, "reason": "no_citations_yet" },
+    { "type": "reputation", "selected": false, "available": true, "reason": null }
+  ],
+  "editions": [
+    { "key": "20261003-0302", "generated_at": "2026-10-03T03:02:40.000Z", "trigger": "refresh" },
+    { "key": "20261001-0900", "generated_at": "2026-10-01T09:00:02.000Z", "trigger": "link_created" }
+  ]
+}
+```
+
+- `link` is `null` until the agency creates one. `available` is `null` before the location's first edition; a type with no data (`gbp_not_connected`, `no_gbp_report`, `no_rank_run`, `no_citations_yet`, …) is hidden on the page even when selected.
+- `PUT { "reports": ["rank_tracker", "gbp_audit"], "branding_override": { "name": "…", "website_url": "https://…" } }` creates the link (with its first edition) or updates it. `reports` needs at least one of `rank_tracker`, `gbp_audit`, `competitor_analysis`, `citation`, `reputation`. `branding_override` omitted = unchanged, `null` = cleared (logo included), `""` clears one field. Answers as `GET`.
+- `POST /rotate`: a new `url`; the old one stops working at once. `DELETE`: turns the link off (`{ "revoked": true }`); its editions stay and come back with a new link. Both **404** `no_link` without an active link.
+- `PUT /logo { "data": "data:image/png;base64,…" }` (PNG/JPEG ≤ 512 KB, as the settings' logo; **400** `logo_type`, `logo_too_large`), `GET /logo` (the image), `DELETE /logo`.
+- `GET /white-label-links?page=&limit=` (25, ≤ 100): `{ results: [{ location: { id, name, city, state, client_id }, url, reports, branding_override: true|false, views, last_viewed_at, last_edition_at, created_at }], page, limit, total }`, newest first.
+
+**The client page (2026-10-16)** is the frontend's React bundle (`dist-client/`, served by nginx at `/w/<token>` and `/<token>`; OPERATIONS.md "White-label client links"). It reads two public calls, relative to its own path:
+- `GET <page>/data?e=<key>` (#242):
+
+```json
+{
+  "branding": { "name": "Northern Local SEO", "website_url": "https://northernlocalseo.example", "contact_text": "hello@northernlocalseo.example · (416) 555-0199",
+    "footer_text": "Northern Local SEO · Toronto, ON", "primary_color": "#0f766e", "secondary_color": "#b45309", "logo_url": "./3q2V8kXb0Jt1yLwZp9aR4A/logo" },
+  "location": { "name": "Maple Leaf Dental", "address": "120 King St W", "city": "Toronto", "state": "Ontario", "country": "Canada" },
+  "edition": { "key": "20261003-0302", "generated_at": "2026-10-03T03:02:40.000Z" },
+  "latest_key": "20261003-0302",
+  "editions": [{ "key": "20261003-0302", "generated_at": "…" }, { "key": "20260903-0301", "generated_at": "…" }],
+  "reports": ["rank_tracker", "gbp_audit", "competitor_analysis"],
+  "data": { "rank_tracker": { "available": true, "run": { "…": "…" }, "summary": { "…": "…" } }, "gbp_audit": { "…": "…" }, "competitor_analysis": { "…": "…" } },
+  "attribution": "Google Maps"
+}
+```
+
+  - `branding` is live (white-label settings + the link's override). `logo_url` is relative to the page, `null` without a logo.
+  - `reports` = the link's selected types that have data in this edition, in display order; `data` holds exactly those, as stored (the `SnapshotData` shapes in `src/modules/reports/reports.types.ts`).
+  - `attribution` is `"Google Maps"` when the shown data includes Places content (Map Ranking names, competitors), else `null`.
+  - Formats: `map_ranking[].points[].point` is one of `C` (the business), `N`, `S`, `E`, `W` (a center-only run has `C` only); GBP `performance.by_day[].date` is `YYYY-MM-DD`; `keywords.latest_month` is `YYYY-MM`.
+  - Each call counts a view. Failures: **404** `{ "error": "not_available" }` (every reason, as below), **429** `{ "error": "rate_limited" }`.
+- `GET <page>/logo` (#243): the image (override logo first, then the settings' logo); **404** without one.
+
+**The server-rendered page** (fallback, until nginx serves the bundle): `/w/<token>` on the API origin, `/<token>` on the neutral domain; HTML, no login, no scripts.
+- Header: the logo, name, contact text and a link to the website. Then the location's name and address, "Updated <date>", links to each report, and "Earlier reports" (one link per edition, `?e=<key>`). An older edition shows a "See the latest" note.
+- One section per selected report that has data, each with **Download PDF** (`<url>/pdf/<type>`, plus `?e=<key>` for an older edition).
+- Footer: the Google Maps attribution when Places content is shown, and the agency's footer text. Never "Powered by MyPageSEO", whatever `hide_mypageseo` says.
+- Every failure (unknown, rotated or revoked link, removed location, organization not an agency, plan without `white_label`, billing inactive or suspended, unknown edition) gives the same neutral 404 page; more than 60 requests a minute from one IP gives a 429 page. Views are counted on the page, not on PDFs.
 
 ## Ranking & data quality (Phase 12.5)
 
@@ -2507,12 +2576,13 @@ Authorization: Bearer eyJ…
 | `admins.manage` | super admin |
 | `platform.read` | super admin, admin |
 | `platform.write` | super admin, admin |
-| `content.manage` | super admin, admin, editor |
 | `citations.view` (Phase 16) | super admin, admin, editor |
 | `citations.manage` (Phase 16) | super admin, admin, editor |
 | `billing.read`, `billing.manage` (Phase 13a) | super admin, admin |
 | `support.read`, `support.manage` (Phase 13b) | super admin, admin, editor |
 | `audits.run` (Phase 19) | super admin, admin, sales representative |
+| `leads.read` (Phase 20) | super admin, admin, sales representative |
+| `leads.manage` (Phase 20) | super admin, admin |
 
 - **Errors:** no or invalid token → **401**; a missing permission → **403**: `{ "reason": "forbidden", "permission": "platform.read" }`. Rate limits → **429** `rate_limited`.
 
@@ -2520,7 +2590,7 @@ Authorization: Bearer eyJ…
 - A bad, expired or revoked **user** token is **401** (it used to be 500 for a bad signature, 404 for a deleted user). Access tokens last 1 day; refresh as in "Session tokens and refresh" above (refresh tokens last 30 days, then sign in again).
 - Password changes and resets end every session of that user.
 - Any request key starting with `$` or containing `.` → **400** `{ "reason": "invalid_input", "field": "body.email.$ne" }`.
-- Request bodies are limited to 1 MB (**413**). Multipart requests: files only on the upload routes (blog create/update, GBP post add); elsewhere a file → **400**.
+- Request bodies are limited to 1 MB (**413**). Multipart requests: a file only on the post photo upload (`POST /locations/:locationId/posts/media`, 9b.2); elsewhere a file → **400**.
 - 500 responses say "Something went wrong." (details only in development).
 
 ### `GET /api/v1/admin/roles` (Phase 13b, `admins.manage`)
@@ -2529,9 +2599,10 @@ The fixed admin roles and what each may do (for the role picker when creating an
 
 ```json
 [
-  { "role_id": 1, "key": "superAdmin", "name": "Super Admin", "active": true, "permissions": ["admins.manage", "platform.read", "platform.write", "content.manage", "citations.view", "citations.manage", "billing.read", "billing.manage"] },
-  { "role_id": 2, "key": "admin", "name": "Admin", "active": true, "permissions": ["platform.read", "platform.write", "content.manage", "citations.view", "citations.manage", "billing.read", "billing.manage"] },
-  { "role_id": 4, "key": "editor", "name": "Editor", "active": true, "permissions": ["content.manage", "citations.view", "citations.manage"] }
+  { "role_id": 1, "key": "superAdmin", "name": "Super Admin", "active": true, "permissions": ["admins.manage", "platform.read", "platform.write", "citations.view", "citations.manage", "billing.read", "billing.manage", "support.read", "support.manage", "audits.run", "leads.read", "leads.manage"] },
+  { "role_id": 2, "key": "admin", "name": "Admin", "active": true, "permissions": ["platform.read", "platform.write", "citations.view", "citations.manage", "billing.read", "billing.manage", "support.read", "support.manage", "audits.run", "leads.read", "leads.manage"] },
+  { "role_id": 4, "key": "editor", "name": "Editor", "active": true, "permissions": ["citations.view", "citations.manage", "support.read", "support.manage"] },
+  { "role_id": 8, "key": "sales", "name": "Sales Representative", "active": true, "permissions": ["audits.run", "leads.read"] }
 ]
 ```
 
@@ -3002,6 +3073,77 @@ MRR = what each open paid subscription charges per month (first + (paid − 1) �
 - `GET /admin/reports/:reportId` → the same body as `GET /reports/:reportId` (`report`, `snapshot`, `document`, `attribution`). **404** `not_found`.
 - `GET /admin/reports/:reportId/pdf` → `application/pdf`; **409** `not_ready` / `expired` / `file_missing`.
 
+## Master settings (Phase 24)
+
+The super admin's **Master settings** page (`/api/v1/admin/master-settings`, permission `settings.master`, no other role). It changes platform configuration at runtime: AI models and budgets, email (SMTP), ranking and data limits, audits, reports, security lifetimes, billing and the PayPal mode. Keys and secrets stay in `.env`, except the SMTP password. **Every save is confirmed by a 6-digit code emailed to `MASTER_SETTINGS_OTP_EMAIL`** (set in `.env`, not editable here). A `.env` value is the default; a saved value overrides it until it is reset. A change reaches every server process within 30 seconds.
+
+`GET /admin/master-settings`:
+
+```json
+{
+  "sections": [
+    { "section": "ai", "settings": [
+      { "key": "OPENAI_MODEL", "label": "OpenAI model for analysis", "value": "gpt-6-luna", "default": "gpt-6-luna", "overridden": false,
+        "constraints": { "type": "string", "allowed": null, "min": null, "max": null, "integer": false }, "warnings": [] },
+      { "key": "OPENAI_REASONING_EFFORT", "label": "OpenAI reasoning effort", "value": "low", "default": "low", "overridden": false,
+        "constraints": { "type": "string", "allowed": ["omit", "none", "minimal", "low", "medium", "high"], "min": null, "max": null, "integer": false }, "warnings": [] }
+    ] },
+    { "section": "email", "settings": [
+      { "key": "SMTP_PASSWORD", "label": "SMTP password", "secret": true, "value": { "set": true }, "default": { "set": false }, "overridden": true, "constraints": { "type": "string" }, "warnings": [] }
+    ] },
+    { "section": "ranking", "settings": [
+      { "key": "RANK_SAMPLES_PER_POINT", "label": "Searches per point (median)", "value": 3, "default": 3, "overridden": false,
+        "constraints": { "type": "number", "allowed": null, "min": 1, "max": 5, "integer": true }, "warnings": ["cost", "history"] }
+    ] }
+  ],
+  "paypal": { "mode": "sandbox", "keys": { "sandbox": true, "live": false } },
+  "code_sent_to": "m***@mypageseo.com",
+  "pending": null
+}
+```
+
+- **Sections:** `general`, `ai`, `email`, `ranking`, `audits`, `reports`, `security`, `billing`. Each setting carries its `.env` name, label, value, default and `overridden`, plus `constraints` for the input: `type` string / number / boolean; `allowed` makes it a select. The full list is in PHASES.md "Phase 24".
+- **Secrets** (the SMTP password) are write-only: `value` / `default` are `{ set }`; send a new value to change it.
+- **Warnings:** `cost` changes the Google bill; `history` shifts ranking history. Show a confirm step for both.
+
+**Saving: propose → code → confirm.**
+1. `POST /changes { "changes": { "OPENAI_MODEL": "gpt-6-luna", "SMTP_PORT": 465, "BILLING_SELLER_TAX_ID": null } }`. Send only what changed; `null` puts a setting back to its `.env` default.
+   - **202** `{ change_id, status: "pending", expires_at, attempts_left: 5, changes: [{ key, label, section, old, new, reset, warnings }], code_sent_to, sent_via, paypal }`.
+   - A secret shows as `"••••"`.
+   - `sent_via: "new_smtp_settings"` when the SMTP settings change: the code goes through the new settings, so if it arrives, they work.
+2. `POST /changes/:changeId/confirm { "code": "123456" }` → `{ applied, version, paypal }`. The checks run again first.
+3. `POST /changes/:changeId/resend` (once a minute) and `DELETE /changes/:changeId` (cancel). `POST /reset { "keys": [...] }` is a proposal setting each key back to its default.
+- **One pending change at a time;** a new save cancels the old one, and `GET` shows the pending one.
+
+**Errors:**
+- **On save:**
+  - **400**: `unknown_setting` (`keys`), `invalid_settings` (`errors: [{ key, message }]`, the `.env` rules), `no_changes`, `smtp_check_failed` (`detail`: the SMTP server's answer);
+  - **409**: `paypal_switch_blocked` or `paypal_check_failed`, with the PayPal checks (below);
+  - **429**: `rate_limited` (10 codes an hour);
+  - **502**: `code_not_sent`;
+  - **503**: `otp_email_not_configured`.
+- **On confirm:** **400** `invalid_code` (`attempts_left`); **429** `too_many_attempts` (after 5, the change is cancelled); **410** `expired` (10 minutes); **404** `change_not_found`.
+
+**PayPal mode.** Both key sets are in `.env` (`PAYPAL_SANDBOX_*`, `PAYPAL_LIVE_*`); `paypal.keys` says which are present. Changing `PAYPAL_MODE` runs these checks, and so does `POST /paypal/check { "mode": "live" }` as a dry run with no code and no change:
+
+```json
+{ "mode": "live", "from": "sandbox", "ok": false,
+  "checks": [
+    { "name": "subscriptions", "ok": false, "detail": "2 open in sandbox" },
+    { "name": "orders", "ok": true, "detail": null },
+    { "name": "keys", "ok": true, "detail": null },
+    { "name": "token", "ok": true, "detail": null },
+    { "name": "product", "ok": true, "detail": null },
+    { "name": "plan_USD", "ok": true, "detail": null },
+    { "name": "plan_CAD", "ok": false, "detail": "PAYPAL_LIVE_PLAN_ID_CAD is not set" }
+  ],
+  "blocking": { "subscriptions": 2, "orders": 0 } }
+```
+
+- **A switch is refused** while the current mode has open subscriptions or pending orders: they live in the mode that created them.
+- **The target mode must be ready:** its keys get a token, and its product and plans exist and are active. The target's ids can be set in the same save (`PAYPAL_LIVE_PRODUCT_ID`, `PAYPAL_LIVE_PLAN_ID_USD`, `PAYPAL_LIVE_PLAN_ID_CAD`).
+- **The checks make real PayPal calls** (one token plus three reads).
+
 ## Support tickets (Phase 13b)
 
 **Customer side** (`/api/v1/support/tickets`, any organization role; a client_user sees only its own tickets):
@@ -3356,7 +3498,7 @@ The series object:
 
 ## AI assist (Phase 22)
 
-Decisions and scope: CLAUDE.md §12n. The text people read (keyword suggestions, review replies, post topics and text) uses `OPENAI_WRITING_MODEL` (default `gpt-6-luna` since 2026-10-13); analysis stays on `OPENAI_MODEL`. AI errors as in "AI errors (every AI route)": **503** `ai_not_configured` / `ai_budget_reached`, **502** `ai_failed`, **402** `insufficient_tokens` (not for keyword suggestions, which are free).
+Decisions and scope: [PHASES.md, Phase 22](PHASES.md#phase-22-ai-assist-2026-10-13). The text people read (keyword suggestions, review replies, post topics and text) uses `OPENAI_WRITING_MODEL` (default `gpt-6-luna` since 2026-10-13); analysis stays on `OPENAI_MODEL`. AI errors as in "AI errors (every AI route)": **503** `ai_not_configured` / `ai_budget_reached`, **502** `ai_failed`, **402** `insufficient_tokens` (not for keyword suggestions, which are free).
 
 ### `POST /locations/:locationId/keywords/suggest { "more"?: false }`: keyword suggestions at setup
 
@@ -3407,7 +3549,7 @@ The voice comes from this location's last 20 posts. With fewer than 5, recent po
 
 ### Google post rules on AI posts (2026-10-13)
 
-The AI posts follow Google's post guidelines. The full table of rules and checks is in [GBP_POST_GUIDELINES.md](GBP_POST_GUIDELINES.md).
+The AI posts follow Google's post guidelines. The full table of rules and checks is in [API.md "Google Business Profile post guidelines"](#google-business-profile-post-guidelines-as-enforced).
 
 **The `ai-draft` answer:**
 
@@ -3546,7 +3688,7 @@ Use one random session token (8–36 of `A-Za-z0-9_-`, e.g. a UUID) per search b
 
 ## Free audit, marketing site (Phase 20)
 
-The free tool on **mypageseo.com**: the same quick audit as the staff dashboard (Phase 19: one business, one keyword, a 7×7 grid within 5 km, ranks to 30, the quick score against the top 3, one PDF), as a lead magnet. Everything else on the marketing site stays on its own backend; **only this page calls this API** (`https://api.mypageseo.com/api/v1`). The marketing-site handoff, with the page flow and copy, is [MARKETING_CLAUDE_NOTE.md](MARKETING_CLAUDE_NOTE.md).
+The free tool on **mypageseo.com**: the same quick audit as the staff dashboard (Phase 19: one business, one keyword, a 7×7 grid within 5 km, ranks to 30, the quick score against the top 3, one PDF), as a lead magnet. Everything else on the marketing site stays on its own backend; **only this page calls this API** (`https://api.mypageseo.com/api/v1`). The marketing-site handoff, with the page flow and copy, is [apps/MARKETING_SITE.md](apps/MARKETING_SITE.md).
 
 **Two stages:**
 1. **Preview:** free for us (the IDs-only grid + 1 Place Details). The page shows the 4 headline numbers, the heatmap colours (no rank numbers) and the score number. The server strips the rest.
@@ -3655,3 +3797,35 @@ On success the view has `lead.verified: true` and `stage: "full_queued"`, or sti
 - `GET /admin/leads/audits/:leadId`: the whole audit and the lead, including `consent_at` and `consent_text_version`.
 - `GET /admin/leads/audits/:leadId/pdf`: **409** `audit_not_ready` unless the audit is verified and done.
 - `DELETE /admin/leads/audits/:leadId` (`leads.manage`): for privacy requests; audit-logged as `admin.free_audit.delete`.
+
+## Google Business Profile post guidelines (as enforced)
+
+Source: Mohit's compiled summary of Google's post content and behaviour rules (2026-10-13). Breaking them can get a post rejected or the whole profile flagged or suspended.
+
+The AI follows every rule below through its instructions (`src/modules/posts/services/aiPrompts.service.ts`). The backend also checks what the AI wrote, where a rule can be checked mechanically (`src/modules/posts/domain/guidelines.ts`, `src/modules/posts/domain/warnings.ts`). Editor warnings use the same checks for posts people write themselves.
+
+### Rules and how each is applied
+
+| Rule | AI instruction | Checked by the backend |
+|---|---|---|
+| No phone numbers in the text (use the Call button) | yes | warning `phone_in_text`; AI drafts retried, auto-posts refused |
+| No links or web addresses in the text (use a button) | yes | warning `link_in_text`; same |
+| No gimmicky formatting: capitals, "!!!", decorative symbols, emoji | yes (no emoji in AI text) | warnings `all_caps` (incl. 3+ shouting words; acronyms allowed), `repeated_punctuation`, `special_characters`; AI drafts also refused with any emoji |
+| No duplicate content across locations or weeks | yes (recent posts and other locations' posts are passed as "do not copy") | AI drafts compared with the location's last 20 posts and the organization's other locations' recent posts (3-word phrase overlap ≥ 35 %) → `duplicate_risk`; retried; auto-posts refused |
+| No misleading claims (guarantees, "instant", "#1", "100%", ranking / lead promises) | yes; extra rule for marketing agencies | warning `bold_claim`; AI drafts retried, auto-posts refused; such post ideas dropped |
+| No invented prices, offers or facts | yes | – |
+| Hotels / lodging: no Offer posts, no prices or deals | yes | Offer posts can't be scheduled or published (`offer_not_allowed_for_lodging`); post ideas never `offer`; AI drafts with prices / % / deal words refused |
+| Regulated products (alcohol, tobacco, gambling, financial services, pharmaceuticals, medical devices): don't showcase or promote them | yes (sectors detected from the business categories) | images told not to show them |
+| Family-friendly content | yes | images told to be family-friendly |
+| Images: authentic, no stock look, no text overlays, logos or watermarks, sharp | yes | the automatic image rotation uses realistic photo styles only; every image prompt forbids text, logos, watermarks, generic charts / arrows and staged office scenes |
+| A clear action button | yes | AI drafts always suggest one (Learn more, or Call without a website), except offers |
+| 100–300 words, value first, locally relevant | yes (100–220 words to stay under Google's 1,500 characters; first sentence under 150 characters; tied to the city) | – |
+
+### How AI drafts are checked
+
+1. The AI writes the draft(s) under the rules above.
+2. Each draft is checked. If any has a hard problem (phone, link, capitals, repeated punctuation, symbols, a claim, emoji, a copy of an earlier post, a lodging price or deal), the AI gets **one free retry** that names the problems.
+3. **Editor ("Write with AI"):** clean drafts are returned. If none is clean, the drafts come back with `compliant: false` and their `warnings`, and the user edits or redoes.
+4. **Auto-posts:** a draft that still fails is not posted. The tokens are refunded and the slot is retried on the next hourly run (`ai_not_compliant`).
+
+**Real photos:** AI images are generated, not photos of the business. Google prefers real photos, so encourage users to upload their own where they can.
