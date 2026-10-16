@@ -8,6 +8,7 @@ import {
   LifeBuoy,
   ScanSearch,
   ShieldCheck,
+  SlidersHorizontal,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -34,4 +35,5 @@ export const navigation: NavItem[] = [
   { label: "Sales audit", to: "/sales-audit", icon: ScanSearch, permission: "audits.run" },
   { label: "Free-audit leads", to: "/leads", icon: ClipboardList, permission: "leads.read" },
   { label: "Staff", to: "/staff", icon: ShieldCheck, permission: "admins.manage" },
+  { label: "Master settings", to: "/master-settings", icon: SlidersHorizontal, permission: "settings.master" },
 ];

@@ -44,6 +44,7 @@ const SalesAuditPage = page(() => import('./pages/sales-audit/SalesAuditPage'), 
 const LeadsPage = page(() => import('./pages/leads/LeadsPage'), 'LeadsPage');
 const LeadDetailPage = page(() => import('./pages/leads/LeadDetailPage'), 'LeadDetailPage');
 const StaffPage = page(() => import('./pages/staff/StaffPage'), 'StaffPage');
+const MasterSettingsPage = page(() => import('./pages/master-settings/MasterSettingsPage'), 'MasterSettingsPage');
 
 function App() {
 	return (
@@ -114,6 +115,11 @@ function App() {
 
 					<Route element={<RequirePermission permission="admins.manage" />}>
 						<Route path="/staff" element={<StaffPage />} />
+					</Route>
+
+					{/* Phase 24: super admin only. */}
+					<Route element={<RequirePermission permission="settings.master" />}>
+						<Route path="/master-settings" element={<MasterSettingsPage />} />
 					</Route>
 
 					<Route path="*" element={<HomeRedirect />} />

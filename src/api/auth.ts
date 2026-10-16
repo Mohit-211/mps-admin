@@ -15,7 +15,9 @@ export type Permission =
   | "content.manage"
   | "audits.run"
   | "leads.read"
-  | "leads.manage";
+  | "leads.manage"
+  /** Phase 24: the master settings page (super admin only). */
+  | "settings.master";
 
 export type Admin = {
   id: string;
@@ -63,4 +65,5 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "audits.run": "Sales audit",
   "leads.read": "Free-audit leads (view)",
   "leads.manage": "Free-audit leads (delete)",
+  "settings.master": "Master settings",
 };
